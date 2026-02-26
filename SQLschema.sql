@@ -1,3 +1,7 @@
+Create Database EventDhondo;
+
+Use EventDhondo;
+
 -- ========= 1. USER & PROFILE MANAGEMENT =========
 
 -- Central table for all users, handling authentication and core details.
@@ -127,7 +131,7 @@ CREATE TABLE [Registrations] (
     [UserID] INT NOT NULL,
     [RegistrationDate] DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
     [Status] NVARCHAR(15) NOT NULL DEFAULT 'Confirmed' CHECK ([Status] IN ('Confirmed', 'Cancelled', 'Attended', 'Waitlisted')),
-    [QRCode] NVARCHAR(MAX) UNIQUE, -- Stores unique QR code data
+    [QRCode] NVARCHAR(255) UNIQUE, -- Stores unique QR code data
     [CancelledAt] DATETIMEOFFSET,
     UNIQUE ([EventID], [UserID]),
     FOREIGN KEY ([EventID]) REFERENCES [Events]([EventID]) ON DELETE CASCADE,
@@ -275,20 +279,20 @@ CREATE TABLE [ReviewResponses] (
 -- ========= 6. INDEXING FOR PERFORMANCE =========
 
 -- For fast login
-CREATE INDEX IX_Users_Email ON [Users]([Email]);
+--CREATE INDEX IX_Users_Email ON [Users]([Email]);
 
--- For filtering events by date, status, and type
-CREATE INDEX IX_Events_Date ON [Events]([EventDate]);
-CREATE INDEX IX_Events_Status ON [Events]([Status]);
-CREATE CLUSTERED INDEX IX_Events_EventType_Date ON [Events]([EventType], [EventDate]);
+---- For filtering events by date, status, and type
+--CREATE INDEX IX_Events_Date ON [Events]([EventDate]);
+--CREATE INDEX IX_Events_Status ON [Events]([Status]);
+--CREATE CLUSTERED INDEX IX_Events_EventType_Date ON [Events]([EventType], [EventDate]);
 
--- For quickly finding registrations for a specific user or event
-CREATE INDEX IX_Registrations_UserID ON [Registrations]([UserID]);
-CREATE INDEX IX_Registrations_EventID ON [Registrations]([EventID]);
+---- For quickly finding registrations for a specific user or event
+--CREATE INDEX IX_Registrations_UserID ON [Registrations]([UserID]);
+--CREATE INDEX IX_Registrations_EventID ON [Registrations]([EventID]);
 
--- For finding achievements and reviews by user
-CREATE INDEX IX_Achievements_UserID ON [StudentAchievements]([UserID]);
-CREATE INDEX IX_Reviews_UserID ON [EventReviews]([UserID]);
+---- For finding achievements and reviews by user
+--CREATE INDEX IX_Achievements_UserID ON [StudentAchievements]([UserID]);
+--CREATE INDEX IX_Reviews_UserID ON [EventReviews]([UserID]);
 
 
 -- NOTE ON FULL-TEXT SEARCH in SQL Server:

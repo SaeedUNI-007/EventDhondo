@@ -1,0 +1,13 @@
+# Ignore dependencies
+node_modules/
+dist/
+
+# Ignore environment variables (passwords/keys)
+.env
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+
+# Ignore build folders
+frontend/build/

@@ -24,11 +24,23 @@ INSERT INTO [OrganizerProfiles] (UserID, OrganizationName, Description, ContactE
 (3, N'FAST Sports Board', N'Managing all indoor and outdoor sports.', N'sports.board@fast.edu.pk');
 
 -- 4. INTERESTS
-INSERT INTO [Interests] (InterestName, Category) VALUES
+
+-- 3. RESET the ID counter back to 0
+DBCC CHECKIDENT ('Interests', RESEED, 0);
+
+-- 4. Re-insert the data (Now it will start from 1, 2, 3...)
+INSERT INTO Interests (InterestName, Category) VALUES
+(N'Competitive Programming', N'Technical'),
 (N'Web Development', N'Technical'),
-(N'Machine Learning', N'Technical'),
+(N'Cyber Security', N'Technical'),
+(N'AI & Robotics', N'Technical'),
 (N'Basketball', N'Sports'),
-(N'Graphic Design', N'Arts');
+(N'Cricket', N'Sports'),
+(N'Table Tennis', N'Sports'),
+(N'Photography', N'Arts'),
+(N'Graphic Design', N'Arts'),
+(N'Public Speaking', N'Soft Skills');
+
 
 -- 5. USER INTERESTS (Hamid likes Web and ML)
 INSERT INTO [UserInterests] (UserID, InterestID) VALUES (4, 1), (4, 2), (5, 3);
@@ -89,3 +101,4 @@ INSERT INTO [EventReviews] (EventID, UserID, AttendanceID, OverallRating, Review
 
 INSERT INTO [ReviewResponses] (ReviewID, OrganizerID, ResponseText) VALUES
 (1, 2, N'Thank you Hamid! Glad you enjoyed it.');
+

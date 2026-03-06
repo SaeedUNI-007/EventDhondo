@@ -82,9 +82,3 @@ To allow the Node.js backend to talk to your local SQL Server, you **must** perf
 
 **Let's get it done!**
 
----
-
-### **What to do now?**
-1.  Update your `README.md` with the text above.
-2.  **Commit and Push.**
-3.  Go to your WhatsApp group and send the link. 

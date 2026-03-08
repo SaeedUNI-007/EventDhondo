@@ -1,6 +1,19 @@
-Create Database EventDhondo;
+USE master;
+GO
 
-Use EventDhondo;
+IF DB_ID(N'EventDhondo') IS NOT NULL
+BEGIN
+    ALTER DATABASE [EventDhondo] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+    DROP DATABASE [EventDhondo];
+END
+GO
+
+CREATE DATABASE [EventDhondo];
+GO
+
+USE [EventDhondo];
+GO
+
 
 DROP TABLE IF EXISTS [ReviewResponses];
 DROP TABLE IF EXISTS [EventReviews];

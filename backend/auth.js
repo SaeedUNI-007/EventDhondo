@@ -18,7 +18,10 @@ router.post('/register', async (req, res) => {
         const lastName = nameParts.slice(1).join(' ') || 'N/A';
         const department = departmentId ? String(departmentId) : null;
         const parsedYear = Number(yearOfStudy);
-        const finalYearOfStudy = Number.isInteger(parsedYear) && parsedYear > 0 ? parsedYear : 1;
+        if (!Number.isInteger(parsedYear) || parsedYear < 1 || parsedYear > 4) {
+            return res.status(400).json({ success: false, message: 'yearOfStudy must be between 1 and 4 for BS degree' });
+        }
+        const finalYearOfStudy = parsedYear;
         
         const pool = await poolPromise;
         const request = pool.request();

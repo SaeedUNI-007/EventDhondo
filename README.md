@@ -82,3 +82,5 @@ To allow the Node.js backend to talk to your local SQL Server, you **must** perf
 
 **Let's get it done!**
 
+**Post request Check Command on CMD**
+`curl -X POST http://localhost:5000/api/auth/login -H "Content-Type: application/json" -d "{\"email\":\"admin@fast.edu.pk\",\"password\":\"hashed_pw_1\"}"`

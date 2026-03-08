@@ -50,9 +50,11 @@ INSERT INTO [EventCategories] (CategoryName, Description) VALUES (N'Technical', 
 INSERT INTO [EventTags] (TagName) VALUES (N'Hackathon'), (N'Workshop'), (N'Trial');
 
 -- 7. EVENTS
-INSERT INTO [Events] (OrganizerID, Title, Description, EventType, EventDate, EventTime, Venue, Capacity, RegistrationDeadline, Status) VALUES
-(2, N'DevHack 2024', N'24-hour coding challenge.', N'Competition', '2024-10-20', '09:00:00', N'CS Lab 1', 50, '2024-10-18', N'Published'),
-(3, N'Basketball Trials', N'Selection for varsity team.', N'Sports', '2024-11-05', '16:00:00', N'Main Court', 20, '2024-11-01', N'Published');
+INSERT INTO [Events] 
+(EventID, Title, Description, EventType, EventDate, EventTime, Venue, Capacity, Status, Organizer, OrganizerEmail, Category)
+VALUES
+(1, N'DevHack 2026', N'24-hour coding challenge.', N'Competition', '2026-10-20', '09:00:00', N'CS Lab 1', 50, N'Published', N'ACM Student Chapter', N'acm.society@fast.edu.pk', N'Technical'),
+(2, N'Basketball Trials 2026', N'Selection for varsity team.', N'Sports', '2026-11-05', '16:00:00', N'Main Court', 20, N'Published', N'FAST Sports Board', N'sports.board@fast.edu.pk', NULL);
 
 -- 8. EVENT MAPPINGS (Category and Tags)
 INSERT INTO [EventCategoryMapping] (EventID, CategoryID) VALUES (1, 1);

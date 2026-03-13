@@ -29,3 +29,34 @@ BEGIN
         SELECT -1 AS NewUserID, ERROR_MESSAGE() AS Message;
     END CATCH
 END;
+
+
+-- Procedure to update student profile details
+CREATE OR ALTER PROCEDURE sp_UpdateStudentProfile
+    @UserID INT,
+    @FirstName NVARCHAR(50),
+    @LastName NVARCHAR(50),
+    @Department NVARCHAR(100),
+    @YearOfStudy INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRANSACTION;
+    BEGIN TRY
+        -- Update the specific profile table
+        UPDATE StudentProfiles
+        SET FirstName = @FirstName,
+            LastName = @LastName,
+            Department = @Department,
+            YearOfStudy = @YearOfStudy
+        WHERE UserID = @UserID;
+
+        COMMIT TRANSACTION;
+        SELECT 'Success' AS Message;
+    END TRY
+    BEGIN CATCH
+        ROLLBACK TRANSACTION;
+        SELECT 'Error: ' + ERROR_MESSAGE() AS Message;
+    END CATCH
+END;
+GO

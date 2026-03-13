@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useState } from 'react';
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
 export default function Dashboard() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -22,7 +24,7 @@ export default function Dashboard() {
       try {
         setLoading(true);
         setError('');
-        const response = await fetch('http://localhost:5000/api/events');
+        const response = await fetch(`${API_BASE_URL}/api/events`);
         const data = await response.json();
 
         if (!response.ok) {

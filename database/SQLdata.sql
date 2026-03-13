@@ -2,21 +2,23 @@
 -- SAMPLE DATA FOR ALL TABLES
 -- Run this AFTER the schema script.
 -- =============================================================================
-
+USE [EventDhondo];
+GO
 -- 1. USERS (Admin, 2 Organizers, 3 Students)
+-- Login passwords for seed accounts remain: hashed_pw_1 ... hashed_pw_6
 INSERT INTO [Users] (Email, PasswordHash, Role, VerificationStatus) VALUES
-(N'admin@fast.edu.pk', N'hashed_pw_1', N'Admin', N'Verified'),
-(N'acm@fast.edu.pk', N'hashed_pw_2', N'Organizer', N'Verified'),
-(N'sports@fast.edu.pk', N'hashed_pw_3', N'Organizer', N'Verified'),
-(N'hamid.abad@fast.edu.pk', N'hashed_pw_4', N'Student', N'Verified'),
-(N'abdullah.zia@fast.edu.pk', N'hashed_pw_5', N'Student', N'Verified'),
-(N'abdullah.saeed@fast.edu.pk', N'hashed_pw_6', N'Student', N'Pending');
+(N'admin@fast.edu.pk', N'$2b$10$a5S8IvriYnwK7nbSzZug6udd8bk11NN8rzAM5jrsbtQMjLPeSS50W', N'Admin', N'Verified'),
+(N'acm@fast.edu.pk', N'$2b$10$MQNPhZrja1d6QXW.DFI0Kej77h.cK/T7J766P23fs4cCTI.zEYWEq', N'Organizer', N'Verified'),
+(N'sports@fast.edu.pk', N'$2b$10$n6xWTtW.sfBv9FEogKGihujA88he7LjwfhTs4CiF5gX8GZQtmTF1m', N'Organizer', N'Verified'),
+(N'hamid.abad@fast.edu.pk', N'$2b$10$7dKZ0OZgIv44dUPa.dzAw./0HUsA.sVPBb4lhpepKrzlJDAojWc/C', N'Student', N'Verified'),
+(N'abdullah.zia@fast.edu.pk', N'$2b$10$DNYNfmZ/503.LJNsdPMH7.9c3Xw2RLkeP6T.PBjDbVtOflVPSabHi', N'Student', N'Verified'),
+(N'abdullah.saeed@fast.edu.pk', N'$2b$10$z6bpweqtdDfJJXzJJhu1AOA9d1gMNe4jR9QuHrCPQQEw4kSQgAA.e', N'Student', N'Pending');
 
 -- 2. STUDENT PROFILES (Linking to UserIDs 4, 5, 6)
 INSERT INTO [StudentProfiles] (UserID, FirstName, LastName, Department, YearOfStudy) VALUES
-(4, N'Muhammad Hamid', N'Abad', N'Computer Science', 2024),
-(5, N'Abdullah Zia', N'Chaudhry', N'Software Engineering', 2024),
-(6, N'Abdullah', N'Saeed', N'Data Science', 2024);
+(4, N'Muhammad Hamid', N'Abad', N'Computer Science', 1),
+(5, N'Abdullah Zia', N'Chaudhry', N'Software Engineering', 2),
+(6, N'Abdullah', N'Saeed', N'Data Science', 3);
 
 -- 3. ORGANIZER PROFILES (Linking to UserIDs 2, 3)
 INSERT INTO [OrganizerProfiles] (UserID, OrganizationName, Description, ContactEmail) VALUES
@@ -51,10 +53,10 @@ INSERT INTO [EventTags] (TagName) VALUES (N'Hackathon'), (N'Workshop'), (N'Trial
 
 -- 7. EVENTS
 INSERT INTO [Events] 
-(EventID, Title, Description, EventType, EventDate, EventTime, Venue, Capacity, Status, Organizer, OrganizerEmail, Category)
+(OrganizerID, Title, Description, EventType, EventDate, EventTime, Venue, Capacity, RegistrationDeadline, Status)
 VALUES
-(1, N'DevHack 2026', N'24-hour coding challenge.', N'Competition', '2026-10-20', '09:00:00', N'CS Lab 1', 50, N'Published', N'ACM Student Chapter', N'acm.society@fast.edu.pk', N'Technical'),
-(2, N'Basketball Trials 2026', N'Selection for varsity team.', N'Sports', '2026-11-05', '16:00:00', N'Main Court', 20, N'Published', N'FAST Sports Board', N'sports.board@fast.edu.pk', NULL);
+(2, N'DevHack 2026', N'24-hour coding challenge.', N'Competition', '2026-10-20', '09:00:00', N'CS Lab 1', 50, '2026-10-15T23:59:59+05:00', N'Published'),
+(3, N'Basketball Trials 2026', N'Selection for varsity team.', N'Sports', '2026-11-05', '16:00:00', N'Main Court', 20, '2026-11-01T23:59:59+05:00', N'Published');
 
 -- 8. EVENT MAPPINGS (Category and Tags)
 INSERT INTO [EventCategoryMapping] (EventID, CategoryID) VALUES (1, 1);

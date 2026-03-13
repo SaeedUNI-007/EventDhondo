@@ -1,3 +1,6 @@
+USE [EventDhondo];
+GO
+
 CREATE OR ALTER VIEW vw_UpcomingEvents AS
 SELECT 
     e.EventID,

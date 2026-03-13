@@ -1,3 +1,6 @@
+USE [EventDhondo];
+GO
+
 CREATE OR ALTER PROCEDURE sp_RegisterStudent
     @Email NVARCHAR(100),
     @PasswordHash NVARCHAR(255),

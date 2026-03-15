@@ -9,6 +9,7 @@ const { poolPromise } = require('./db');
 // 2. IMPORT ROUTE FILES
 const authRoutes = require('./auth');
 const dataRoutes = require('./data');
+const teamRoutes = require('./team');
 
 const app = express();
 
@@ -21,6 +22,7 @@ app.use(cors());
 // 3. REGISTER YOUR NEW ROUTES
 app.use('/api/auth', authRoutes); // All routes in auth.js will start with /api/auth
 app.use('/api', dataRoutes);      // All routes in data.js will start with /api
+app.use('/api/teams', teamRoutes);
 
 // 4. TEST ROUTE: GET ALL USERS (Refactored to use the new poolPromise)
 app.get('/api/users', async (req, res) => {

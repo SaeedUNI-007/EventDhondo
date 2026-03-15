@@ -75,6 +75,101 @@ router.get('/events', async (req, res) => {
     }
 });
 
+// 2.2 POST Register for Event (Sprint 2)
+router.post('/events/register', async (req, res) => {
+    const { userId, eventId } = req.body;
+
+    if (!Number.isInteger(Number(userId)) || !Number.isInteger(Number(eventId))) {
+        return res.status(400).json({ success: false, message: 'userId and eventId are required as integers' });
+    }
+
+    try {
+        const pool = await poolPromise;
+        const result = await pool.request()
+            .input('UserID', sql.Int, Number(userId))
+            .input('EventID', sql.Int, Number(eventId))
+            .execute('dbo.sp_RegisterForEvent');
+
+        const message = result.recordset?.[0]?.Message || 'Registration processed';
+        return res.json({ success: true, message });
+    } catch (err) {
+        return res.status(400).json({ success: false, message: err.message });
+    }
+});
+
+// 2.3 POST Event Check-In by QR code (Sprint 2)
+router.post('/events/check-in', async (req, res) => {
+    const { qrCode } = req.body;
+
+    if (!qrCode || !String(qrCode).trim()) {
+        return res.status(400).json({ success: false, message: 'qrCode is required' });
+    }
+
+    try {
+        const pool = await poolPromise;
+        const result = await pool.request()
+            .input('QRCode', sql.NVarChar(255), String(qrCode).trim())
+            .query(`
+                DECLARE @RegistrationID INT;
+
+                SELECT @RegistrationID = RegistrationID
+                FROM [dbo].[Registrations]
+                WHERE QRCode = @QRCode;
+
+                IF @RegistrationID IS NULL
+                BEGIN
+                    SELECT CAST(0 AS BIT) AS Success, 'Invalid QR code' AS Message;
+                    RETURN;
+                END
+
+                UPDATE [dbo].[Registrations]
+                SET Status = 'Attended'
+                WHERE RegistrationID = @RegistrationID;
+
+                IF NOT EXISTS (SELECT 1 FROM [dbo].[Attendance] WHERE RegistrationID = @RegistrationID)
+                BEGIN
+                    INSERT INTO [dbo].[Attendance] (RegistrationID)
+                    VALUES (@RegistrationID);
+                END
+
+                SELECT CAST(1 AS BIT) AS Success, 'Attendance marked!' AS Message;
+            `);
+
+        const payload = result.recordset?.[0];
+        if (!payload?.Success) {
+            return res.status(404).json({ success: false, message: payload?.Message || 'Invalid QR code' });
+        }
+
+        return res.json({ success: true, message: payload.Message });
+    } catch (err) {
+        return res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// 2.4 GET Notifications (Unread/unsent first) (Sprint 2)
+router.get('/notifications/:userId', async (req, res) => {
+    if (!Number.isInteger(Number(req.params.userId))) {
+        return res.status(400).json({ success: false, message: 'Valid userId is required' });
+    }
+
+    try {
+        const pool = await poolPromise;
+        const result = await pool.request()
+            .input('UserID', sql.Int, Number(req.params.userId))
+            .query(`
+                SELECT *
+                FROM [dbo].[Notifications]
+                WHERE UserID = @UserID
+                  AND Status IN ('Pending', 'Sent')
+                ORDER BY CreatedAt DESC
+            `);
+        return res.json(result.recordset);
+    } catch (err) {
+        console.error('Notification Error:', err);
+        return res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 // 2.1 DELETE Event (Organizer dashboard)
 router.delete('/events/:id', async (req, res) => {
     const eventId = Number(req.params.id);

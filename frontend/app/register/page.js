@@ -9,58 +9,183 @@ export default function Register() {
   const [role, setRole] = useState('student');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [organizationName, setOrganizationName] = useState('');
+  const [organizationDescription, setOrganizationDescription] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [department, setDepartment] = useState('Computer Science');
+  const [program, setProgram] = useState('BS - CS'); // single field combining degree+subject
   const [yearOfStudy, setYearOfStudy] = useState('1');
-  const [organizationName, setOrganizationName] = useState('');
+  const [dob, setDob] = useState(''); // YYYY-MM-DD
+  const [profilePictureDataUrl, setProfilePictureDataUrl] = useState('');
+  const [interests, setInterests] = useState([]);
+  const [showInterests, setShowInterests] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
 
+  const PROGRAM_OPTIONS = [
+    "BS - CS",
+    "BS - SE",
+    "BS - DS",
+    "BS - AI",
+    "BS - CyberSecurity",
+    "BS - Business",
+    "BSc - CS",
+    "BSc - Data Science",
+    "BA - Business",
+    "BBA - Business",
+    "MBA - Business",
+    "MS - CS",
+    "MS - AI",
+    "MS - Data Science",
+    "MS - CyberSecurity",
+    "MS - Business Analytics",
+    "PhD - CS"
+  ];
+
+  const PROGRAM_SUGGESTIONS = {
+    "BS - CS": { interests: ["Coding Contest / Competitive Programming","Web Development"] },
+    "BS - SE": { interests: ["Fullstack Project","REST API Design"] },
+    "BS - DS": { interests: ["Data Science","Big Data / Hadoop / Spark"] },
+    "BS - AI": { interests: ["AI / Machine Learning","Deep Learning"] },
+    "BS - CyberSecurity": { interests: ["Cybersecurity / CTF"] },
+    "BS - Business": { interests: ["Product Management / Startup Pitch","Business Case Competitions"] },
+    "BBA - Business": { interests: ["Business Case Competitions","Entrepreneurship / Startup Pitch"] },
+    "MBA - Business": { interests: ["Business Case Competitions","Entrepreneurship / Startup Pitch"] },
+    "MS - CS": { interests: ["Research Seminars","Seminars / Guest Lectures"] },
+    "MS - AI": { interests: ["AI / Machine Learning","NLP (Natural Language Processing)"] },
+    "MS - Data Science": { interests: ["Data Science","Big Data / Hadoop / Spark"] },
+    "MS - CyberSecurity": { interests: ["Cybersecurity / CTF"] },
+    "MS - Business Analytics": { interests: ["Business Case Competitions"] },
+    "PhD - CS": { interests: ["Research Seminars"] }
+  };
+
+  const EVENT_TYPES = [
+    "Coding Contest / Competitive Programming",
+    "Hackathon",
+    "Algorithm Workshop",
+    "Data Structures Workshop",
+    "AI / Machine Learning",
+    "Deep Learning",
+    "Data Science",
+    "NLP (Natural Language Processing)",
+    "Web Development",
+    "Frontend Development",
+    "Backend Development",
+    "Fullstack Project",
+    "DevOps / CI-CD",
+    "Cloud Computing",
+    "Mobile App Development",
+    "React / Next.js",
+    "Vue.js",
+    "Angular",
+    "Databases / SQL",
+    "NoSQL / MongoDB",
+    "Cybersecurity / CTF",
+    "Blockchain / Smart Contracts",
+    "IoT / Embedded Systems",
+    "Game Development",
+    "AR / VR",
+    "Computer Graphics",
+    "Robotics",
+    "Hardware Hack",
+    "UI/UX / Design Sprint",
+    "Product Management / Startup Pitch",
+    "Open Source Contribution",
+    "Testing / TDD",
+    "Software Architecture",
+    "Performance Engineering",
+    "Big Data / Hadoop / Spark",
+    "REST API Design",
+    "GraphQL",
+    "Seminars / Guest Lectures",
+    "Business Case Competitions",
+    "Entrepreneurship / Startup Pitch"
+  ];
+
+  const toggleInterest = (type) => {
+    setInterests(prev => (prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]));
+  };
+
+  const removeInterest = (type) => setInterests(prev => prev.filter(t => t !== type));
+
+  const handleProfilePicture = (file) => {
+    if (!file) { setProfilePictureDataUrl(''); return; }
+    const reader = new FileReader();
+    reader.onload = () => setProfilePictureDataUrl(reader.result.toString());
+    reader.readAsDataURL(file);
+  };
+
+  const onProgramChange = (p) => {
+    setProgram(p);
+    const suggestions = PROGRAM_SUGGESTIONS[p] || { interests: [] };
+    setInterests(prev => Array.from(new Set([...prev, ...suggestions.interests])));
+  };
+
+  const orderedTypes = [...interests, ...EVENT_TYPES.filter(t => !interests.includes(t))];
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-    setSuccess('');
+    setError(''); setSuccess('');
 
-    if (role === 'organizer') {
-      setError('Organizer registration is not available yet in the backend. Please use Student for now.');
-      return;
-    }
+    if (!email || !password) { setError('Email and password are required.'); return; }
 
-    const numericYear = Number(yearOfStudy);
-    if (!Number.isInteger(numericYear) || numericYear < 1 || numericYear > 4) {
-      setError('Year of Study must be between 1 and 4 for BS degree.');
-      return;
+    if (role === 'student') {
+      if (!firstName.trim() || !lastName.trim()) { setError('First name and last name are required for students.'); return; }
+      const numericYear = Number(yearOfStudy);
+      if (!Number.isInteger(numericYear) || numericYear < 1 || numericYear > 8) { setError('Year of Study must be an integer between 1 and 8.'); return; }
+      if (dob && isNaN(Date.parse(dob))) { setError('DOB is not a valid date.'); return; }
+    } else {
+      if (!organizationName.trim() || !contactEmail.trim()) { setError('Organization name and contact email are required for organizers.'); return; }
     }
 
     try {
       setIsSubmitting(true);
+      const [degreeLevel, subject] = program.split(' - ').map(s => s.trim());
       const payload = {
-        name: `${firstName} ${lastName}`.trim(),
         email,
         password,
-        departmentId: department,
-        yearOfStudy: numericYear,
+        role,
+        interests,
+        profilePicture: profilePictureDataUrl || null,
+        studentProfile: null,
+        organizerProfile: null
       };
+
+      if (role === 'student') {
+        payload.studentProfile = {
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          department: subject || null,
+          degree: degreeLevel || null,
+          yearOfStudy: Number(yearOfStudy) || null,
+          dateOfBirth: dob || null,
+          profilePictureURL: profilePictureDataUrl || null
+        };
+      } else {
+        payload.organizerProfile = {
+          organizationName: organizationName.trim(),
+          description: organizationDescription.trim() || null,
+          contactEmail: contactEmail.trim(),
+          profilePictureURL: profilePictureDataUrl || null
+        };
+      }
 
       const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(payload)
       });
 
       const data = await response.json();
-      if (!response.ok) {
-        setError(data.message || 'Registration failed');
-        return;
-      }
+      if (!response.ok) { setError(data.message || 'Registration failed.'); return; }
 
       setSuccess('Registration successful. Redirecting to login...');
       setTimeout(() => router.push('/login'), 1200);
     } catch (err) {
-      setError('Server connection failed');
+      setError('Server connection failed.');
     } finally {
       setIsSubmitting(false);
     }
@@ -73,45 +198,114 @@ export default function Register() {
           <p className="inline-block rounded-full bg-[var(--surface-soft)] px-3 py-1 text-xs font-bold text-[var(--brand-strong)]">NEW HERE</p>
           <h1 className="mt-4 text-4xl font-extrabold leading-tight">Create Your Event Identity</h1>
           <p className="mt-4 text-slate-600">Join EventDhondo to find technical competitions, sports events, and portfolio-worthy opportunities around campus.</p>
-          <div className="mt-8 space-y-3 text-sm text-slate-700">
-            <div className="rounded-xl bg-[var(--surface-soft)] p-3">Verified student onboarding</div>
-            <div className="rounded-xl bg-[var(--surface-soft)] p-3">Role-based event recommendations</div>
-            <div className="rounded-xl bg-[var(--surface-soft)] p-3">One place for registrations and achievements</div>
-          </div>
         </section>
 
         <form onSubmit={handleSubmit} className="glass reveal-up stagger-1 w-full rounded-2xl p-6 md:p-8">
           <h2 className="text-3xl font-bold text-[var(--brand-strong)]">Create Account</h2>
-          <p className="mb-5 mt-1 text-sm text-slate-600">Student registration is active on backend</p>
+          <p className="mb-5 mt-1 text-sm text-slate-600">Student and Organizer registration</p>
 
           {error && <p className="mb-4 rounded-lg bg-rose-50 p-2 text-center text-sm text-[var(--danger)]">{error}</p>}
           {success && <p className="mb-4 rounded-lg bg-emerald-50 p-2 text-center text-sm text-emerald-700">{success}</p>}
-        
+
           <div className="mb-4 grid grid-cols-2 gap-3 rounded-xl bg-[var(--surface-soft)] p-1.5">
             <button type="button" onClick={() => setRole('student')} className={`rounded-lg p-2 text-sm font-semibold ${role === 'student' ? 'bg-white text-[var(--brand-strong)] shadow-sm' : 'text-slate-600'}`}>Student</button>
             <button type="button" onClick={() => setRole('organizer')} className={`rounded-lg p-2 text-sm font-semibold ${role === 'organizer' ? 'bg-white text-[var(--brand-strong)] shadow-sm' : 'text-slate-600'}`}>Organizer</button>
           </div>
 
           <div className="grid gap-3 md:grid-cols-2">
-            <input className="w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5 outline-none transition focus:border-[var(--brand)] focus:ring-2 focus:ring-teal-200" type="text" placeholder="First Name" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
-            <input className="w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5 outline-none transition focus:border-[var(--brand)] focus:ring-2 focus:ring-teal-200" type="text" placeholder="Last Name" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+            {role === 'student' ? (
+              <>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">First Name</label>
+                  <input className="w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5" type="text" placeholder="First Name" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">Last Name</label>
+                  <input className="w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5" type="text" placeholder="Last Name" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">Organization Name</label>
+                  <input className="w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5" type="text" placeholder="Organization Name" value={organizationName} onChange={(e) => setOrganizationName(e.target.value)} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">Contact Email</label>
+                  <input className="w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5" type="email" placeholder="Contact Email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} required />
+                </div>
+              </>
+            )}
           </div>
-          <input className="mt-3 w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5 outline-none transition focus:border-[var(--brand)] focus:ring-2 focus:ring-teal-200" type="email" placeholder="University Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          <input className="mb-3 mt-3 w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5 outline-none transition focus:border-[var(--brand)] focus:ring-2 focus:ring-teal-200" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
 
-          {role === 'student' ? (
+          <label className="mt-3 block text-sm font-semibold text-slate-700">University E-mail</label>
+          <input className="mt-1 w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5" type="email" placeholder="University Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+
+          <label className="mb-1 mt-3 block text-sm font-semibold text-slate-700">Password</label>
+          <input className="mb-3 mt-1 w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+
+          {role === 'student' && (
             <>
-              <select className="w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5 outline-none transition focus:border-[var(--brand)] focus:ring-2 focus:ring-teal-200" value={department} onChange={(e) => setDepartment(e.target.value)}>
-                <option value="Computer Science">Computer Science</option>
-                <option value="Software Engineering">Software Engineering</option>
-                <option value="Electrical Engineering">Electrical Engineering</option>
-              </select>
-              <label className="mt-3 block text-sm font-semibold text-slate-700">Year of Study (BS: 1-4)</label>
-              <input className="mt-1 w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5 outline-none transition focus:border-[var(--brand)] focus:ring-2 focus:ring-teal-200" type="number" min="1" max="4" placeholder="Enter 1 to 4" value={yearOfStudy} onChange={(e) => setYearOfStudy(e.target.value)} required />
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">Degree & Subject</label>
+                  <select className="w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5" value={program} onChange={(e) => onProgramChange(e.target.value)}>
+                    {PROGRAM_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                  <p className="mt-1 text-xs text-slate-500">Choose the exact program (e.g. "BS - CS", "MBA - Business")</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">Academic Year</label>
+                  <input className="w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5" type="number" min="1" max="8" value={yearOfStudy} onChange={(e) => setYearOfStudy(e.target.value)} placeholder="Enter numeric year (e.g., 1 for 1st year)" />
+                  <p className="mt-1 text-xs text-slate-500">Enter numeric year of your program (for multi-year degrees enter the year number)</p>
+                </div>
+              </div>
+
+              <label className="mt-3 block text-sm font-semibold text-slate-700">Date of Birth</label>
+              <input className="mt-1 w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5" type="date" value={dob} onChange={(e) => setDob(e.target.value)} />
             </>
-          ) : (
-            <input className="w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5 outline-none transition focus:border-[var(--brand)] focus:ring-2 focus:ring-teal-200" type="text" placeholder="Society Name" value={organizationName} onChange={(e) => setOrganizationName(e.target.value)} required />
           )}
+
+          {role === 'organizer' && (
+            <div className="mt-3">
+              <label className="block text-sm font-semibold text-slate-700">Organization Description (optional)</label>
+              <textarea className="mt-1 w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5" rows={3} value={organizationDescription} onChange={(e) => setOrganizationDescription(e.target.value)} />
+            </div>
+          )}
+
+          <div className="mt-3">
+            <label className="block text-sm font-semibold text-slate-700 mb-2">Interests</label>
+            <button type="button" className="mb-2 rounded-md bg-white px-3 py-2 border" onClick={() => setShowInterests(s => !s)}>
+              {interests.length ? `${interests.length} selected` : 'Choose interests'}
+            </button>
+            {showInterests && (
+              <div className="grid max-h-60 overflow-auto gap-2 rounded-xl border border-[var(--stroke)] bg-white p-3">
+                {orderedTypes.map((type) => (
+                  <label key={type} className="flex items-center gap-2">
+                    <input type="checkbox" checked={interests.includes(type)} onChange={() => toggleInterest(type)} className="h-4 w-4" />
+                    <span className={`text-sm ${interests.includes(type) ? 'font-semibold' : ''}`}>{type}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            {interests.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {interests.map(t => (
+                  <div key={t} className="flex items-center gap-2 rounded-full bg-[var(--surface-soft)] px-3 py-1 text-sm">
+                    <span className="max-w-[14rem] truncate">{t}</span>
+                    <button type="button" onClick={() => removeInterest(t)} className="ml-1 rounded-full px-1 text-xs text-rose-600">×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-3">
+            <label className="block text-sm font-semibold text-slate-700 mb-2">Profile Picture (optional)</label>
+            <input type="file" accept="image/*" onChange={(e) => handleProfilePicture(e.target.files?.[0])} />
+            {profilePictureDataUrl && <img src={profilePictureDataUrl} alt="preview" className="mt-2 h-20 w-20 object-cover rounded-md" />}
+          </div>
 
           <button disabled={isSubmitting} className="cta mt-5 w-full py-2.5 font-semibold disabled:cursor-not-allowed disabled:opacity-70">
             {isSubmitting ? 'Signing up...' : 'Sign Up'}

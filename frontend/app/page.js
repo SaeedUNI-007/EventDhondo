@@ -33,6 +33,9 @@ export default function Home() {
               <Link href="/dashboard" className="rounded-xl border border-[var(--stroke)] bg-white px-5 py-3 font-semibold text-slate-700 hover:bg-[var(--surface-soft)]">
                 Preview Dashboard
               </Link>
+              <Link href="/dashboardO" className="rounded-xl border border-[var(--stroke)] bg-white px-5 py-3 font-semibold text-slate-700 hover:bg-[var(--surface-soft)]">
+                Preview Org Dashboard
+              </Link>
             </div>
           </div>
 

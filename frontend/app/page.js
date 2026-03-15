@@ -1,11 +1,27 @@
+"use client";
 import Link from 'next/link';
+import Image from 'next/image';
+
+const NAV_LOGO_SRC = '/Logo.png';
 
 export default function Home() {
+  const userRole = typeof window !== 'undefined'
+    ? (localStorage.getItem('userRole') || '').toLowerCase()
+    : '';
+
+  const previewHref = userRole === 'organizer'
+    ? '/dashboardO'
+    : (userRole === 'student' ? '/dashboard' : '/login');
+  const previewLabel = userRole ? 'Preview Your Dashboard' : 'Preview Dashboard';
+
   return (
     <main className="min-h-screen">
       <div className="shell">
         <nav className="glass reveal-up flex items-center justify-between rounded-2xl px-4 py-3 md:px-6 md:py-4">
-          <p className="text-lg font-bold text-[var(--brand-strong)] md:text-2xl">EventDhondo</p>
+          <Link href="/" className="flex items-center gap-2">
+            <Image src={NAV_LOGO_SRC} alt="EventDhondo logo" width={28} height={28} />
+            <p className="text-lg font-bold text-[var(--brand-strong)] md:text-2xl">EventDhondo</p>
+          </Link>
           <div className="flex items-center gap-2 md:gap-3">
             <Link href="/login" className="rounded-xl px-4 py-2 text-sm font-semibold text-[var(--brand-strong)] hover:bg-[var(--surface-soft)] md:text-base">
               Login
@@ -30,18 +46,15 @@ export default function Home() {
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               <Link href="/register" className="cta px-5 py-3 font-semibold">Create Account</Link>
-              <Link href="/dashboard" className="rounded-xl border border-[var(--stroke)] bg-white px-5 py-3 font-semibold text-slate-700 hover:bg-[var(--surface-soft)]">
-                Preview Dashboard
-              </Link>
-              <Link href="/dashboardO" className="rounded-xl border border-[var(--stroke)] bg-white px-5 py-3 font-semibold text-slate-700 hover:bg-[var(--surface-soft)]">
-                Preview Org Dashboard
+              <Link href={previewHref} className="rounded-xl border border-[var(--stroke)] bg-white px-5 py-3 font-semibold text-slate-700 hover:bg-[var(--surface-soft)]">
+                {previewLabel}
               </Link>
             </div>
           </div>
 
           <div className="surface-card reveal-up stagger-2 overflow-hidden p-5 md:p-6">
             <div className="rounded-xl bg-[var(--surface-soft)] p-4">
-              <p className="text-sm font-semibold text-[var(--brand-strong)]">Tonight's Highlights</p>
+              <p className="text-sm font-semibold text-[var(--brand-strong)]">Tonight&apos;s Highlights</p>
               <div className="mt-4 space-y-3">
                 <div className="rounded-lg bg-white p-3">
                   <p className="font-semibold">DevHack Sprint</p>

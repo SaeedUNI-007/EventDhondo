@@ -13,7 +13,9 @@ const dataRoutes = require('./data');
 const app = express();
 
 // Middleware
-app.use(express.json());
+const requestBodyLimit = process.env.REQUEST_BODY_LIMIT || '10mb';
+app.use(express.json({ limit: requestBodyLimit }));
+app.use(express.urlencoded({ extended: true, limit: requestBodyLimit }));
 app.use(cors());
 
 // 3. REGISTER YOUR NEW ROUTES
@@ -34,6 +36,17 @@ app.get('/api/users', async (req, res) => {
 // 5. TEST ROUTE: HELLO WORLD
 app.get('/', (req, res) => {
     res.send('EventDhondo Backend is Live!');
+});
+
+// Return a friendly response when payload exceeds request body limit.
+app.use((err, req, res, next) => {
+    if (err?.type === 'entity.too.large') {
+        return res.status(413).json({
+            success: false,
+            message: `Request payload too large. Reduce image size or set REQUEST_BODY_LIMIT (current ${requestBodyLimit}).`,
+        });
+    }
+    return next(err);
 });
 
 const PORT = Number(process.env.API_PORT || process.env.PORT) || 5000;

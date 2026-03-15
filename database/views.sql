@@ -1,6 +1,9 @@
 USE [EventDhondo];
 GO
 
+USE [EventDhondo];
+GO
+
 CREATE OR ALTER VIEW vw_UpcomingEvents AS
 SELECT 
     e.EventID,
@@ -12,8 +15,10 @@ SELECT
     e.Venue,
     e.Capacity,
     e.Status,
+    e.PosterURL,         -- Event Poster
     o.OrganizationName AS Organizer,
     o.ContactEmail AS OrganizerEmail,
+    o.ProfilePictureURL AS OrganizerLogo, -- <--- ADDED THIS TO THE VIEW
     -- This gets the first category name assigned to the event
     (SELECT TOP 1 CategoryName FROM EventCategories ec 
      JOIN EventCategoryMapping ecm ON ec.CategoryID = ecm.CategoryID 

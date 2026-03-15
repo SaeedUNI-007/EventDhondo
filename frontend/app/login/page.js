@@ -2,8 +2,10 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+const NAV_LOGO_SRC = '/Logo.png';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -27,13 +29,25 @@ export default function Login() {
 
       if (response.ok) {
         // UI Action: Save UserID in localStorage 
-        localStorage.setItem('userID', String(data.userId ?? data.userID ?? ''));
-        localStorage.setItem('userRole', data.role);
+        const resolvedUserId = String(data.userId ?? data.userID ?? '');
+        const resolvedRole = String(data.role || 'Student');
+
+        localStorage.setItem('userID', resolvedUserId);
+        localStorage.setItem('userId', resolvedUserId);
+        localStorage.setItem('userRole', resolvedRole);
         localStorage.setItem('userEmail', email);
+        localStorage.setItem(`userEmail:${resolvedUserId}`, email);
         const guessedName = email.split('@')[0].replace(/[._-]+/g, ' ');
         const titleCaseName = guessedName.replace(/\b\w/g, (c) => c.toUpperCase());
-        localStorage.setItem('displayName', titleCaseName || 'Student');
-        router.push('/dashboard');
+        const safeDisplayName = titleCaseName || 'Student';
+        localStorage.setItem('displayName', safeDisplayName);
+        localStorage.setItem(`displayName:${resolvedUserId}`, safeDisplayName);
+
+        if (resolvedRole.toLowerCase() === 'organizer') {
+          router.push('/dashboardO');
+        } else {
+          router.push('/dashboard');
+        }
       } else {
         setError(data.message || 'Login failed');
       }
@@ -44,6 +58,15 @@ export default function Login() {
 
   return (
     <main className="min-h-screen px-4 py-10">
+      <nav className="glass reveal-up mx-auto mb-6 flex max-w-5xl items-center justify-between rounded-2xl px-4 py-3 md:px-6 md:py-4">
+        <Link href="/" className="flex items-center gap-2">
+          <Image src={NAV_LOGO_SRC} alt="EventDhondo logo" width={28} height={28} />
+          <p className="text-lg font-bold text-[var(--brand-strong)] md:text-2xl">EventDhondo</p>
+        </Link>
+        <Link href="/" className="rounded-xl border border-[var(--stroke)] bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-[var(--surface-soft)]">
+          Back to Home
+        </Link>
+      </nav>
       <div className="mx-auto grid max-w-5xl gap-6 md:grid-cols-[1.05fr_0.95fr]">
         <section className="surface-card reveal-up hidden p-8 md:block">
           <p className="inline-block rounded-full bg-[var(--surface-soft)] px-3 py-1 text-xs font-bold text-[var(--brand-strong)]">WELCOME BACK</p>

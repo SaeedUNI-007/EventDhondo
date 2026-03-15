@@ -2,49 +2,127 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
+function FieldRow({ label, value, editable = true, children }) {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="w-36 text-sm font-medium text-slate-700">{label}</div>
+      <div className="flex-1">
+        {editable ? children : <div className="text-sm text-slate-800">{value || <span className="text-slate-400">Not set</span>}</div>}
+      </div>
+    </div>
+  );
+}
+
 export default function ProfilePage() {
+  const [currentUserId, setCurrentUserId] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState('');
   const [studentId, setStudentId] = useState('');
   const [dob, setDob] = useState('');
   const [email, setEmail] = useState('');
   const [institution, setInstitution] = useState('');
-  const [location, setLocation] = useState('');
   const [linkA, setLinkA] = useState('');
   const [linkB, setLinkB] = useState('');
   const [profilePictureDataUrl, setProfilePictureDataUrl] = useState('');
+  const [status, setStatus] = useState('');
 
-  // per-field editing flags
-  const [editing, setEditing] = useState({
-    name: false,
-    dob: false,
-    institution: false,
-    location: false,
-    linkA: false,
-    linkB: false
-  });
+  const readScopedValue = (key, fallback = '') => {
+    if (typeof window === 'undefined') return fallback;
+    if (currentUserId) {
+      const scopedValue = localStorage.getItem(`${key}:${currentUserId}`);
+      if (scopedValue !== null) return scopedValue;
+      return fallback;
+    }
+    const legacyValue = localStorage.getItem(key);
+    return legacyValue !== null ? legacyValue : fallback;
+  };
+
+  const writeScopedValue = (key, value) => {
+    if (typeof window === 'undefined' || !currentUserId) return;
+    const storageKey = `${key}:${currentUserId}`;
+    if (value === null || value === undefined || value === '') {
+      localStorage.removeItem(storageKey);
+      return;
+    }
+    localStorage.setItem(storageKey, String(value));
+  };
 
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    const savedName = localStorage.getItem('displayName');
-    const savedEmail = localStorage.getItem('userEmail');
-    const savedPic = localStorage.getItem('profilePictureURL');
-    const savedId = localStorage.getItem('studentId');
-    const savedDob = localStorage.getItem('dateOfBirth');
-    const savedInstitution = localStorage.getItem('institution');
-    const savedLocation = localStorage.getItem('location');
-    const savedLinkA = localStorage.getItem('linkA');
-    const savedLinkB = localStorage.getItem('linkB');
+    const userId = localStorage.getItem('userID') || localStorage.getItem('userId');
+    setCurrentUserId(userId || '');
+
+    const readInitial = (key, fallback = '') => {
+      if (userId) {
+        const scopedValue = localStorage.getItem(`${key}:${userId}`);
+        if (scopedValue !== null) return scopedValue;
+        return fallback;
+      }
+      const legacyValue = localStorage.getItem(key);
+      return legacyValue !== null ? legacyValue : fallback;
+    };
+
+    const savedName = readInitial('displayName');
+    const savedEmail = readInitial('userEmail', 'no-reply@university.edu');
+    const savedPic = readInitial('profilePictureURL');
+    const savedId = readInitial('studentId') || userId;
+    const savedDob = readInitial('dateOfBirth');
+    const savedInstitution = readInitial('institution', 'FAST NUCES');
+    const savedLinkA = readInitial('linkA');
+    const savedLinkB = readInitial('linkB');
 
     setName(savedName || 'Your Name');
     setEmail(savedEmail || 'no-reply@university.edu');
     setProfilePictureDataUrl(savedPic || '');
     setStudentId(savedId || '000000');
     setDob(savedDob || '');
-    setInstitution(savedInstitution || 'Your Institution');
-    setLocation(savedLocation || 'Select location');
+    setInstitution(savedInstitution || 'FAST NUCES');
     setLinkA(savedLinkA || '');
     setLinkB(savedLinkB || '');
+
+    const fetchProfile = async () => {
+      if (!userId) return;
+      try {
+        setStatus('Loading profile...');
+        const res = await fetch(`${API_BASE_URL}/api/profile/${encodeURIComponent(userId)}`);
+        const data = await res.json();
+        if (!res.ok || !data) {
+          throw new Error(data?.message || 'Failed to load profile');
+        }
+
+        const fullName = [data.FirstName, data.LastName].filter(Boolean).join(' ').trim();
+        const resolvedName = fullName || savedName || 'Your Name';
+        const resolvedEmail = data.Email || savedEmail || 'no-reply@university.edu';
+        const resolvedPic = data.ProfilePictureURL || savedPic || '';
+        const resolvedInstitution = savedInstitution || data.Department || 'FAST NUCES';
+
+        setName(resolvedName);
+        setEmail(resolvedEmail);
+        setProfilePictureDataUrl(resolvedPic);
+        setInstitution(resolvedInstitution);
+        setStudentId(String(data.UserID || userId));
+
+        localStorage.setItem(`displayName:${userId}`, resolvedName);
+        localStorage.setItem(`userEmail:${userId}`, resolvedEmail);
+        localStorage.setItem(`profilePictureURL:${userId}`, resolvedPic);
+        localStorage.setItem(`institution:${userId}`, resolvedInstitution);
+        localStorage.setItem(`studentId:${userId}`, String(data.UserID || userId));
+
+        // Keep these generic keys aligned with the current logged in user for non-scoped pages.
+        localStorage.setItem('displayName', resolvedName);
+        localStorage.setItem('userEmail', resolvedEmail);
+        localStorage.setItem('profilePictureURL', resolvedPic);
+
+        setStatus('');
+      } catch (err) {
+        setStatus(err.message || 'Could not fetch profile from server');
+      }
+    };
+
+    fetchProfile();
   }, []);
 
   const openFilePicker = () => fileInputRef.current?.click();
@@ -55,77 +133,66 @@ export default function ProfilePage() {
     reader.onload = () => {
       const url = reader.result.toString();
       setProfilePictureDataUrl(url);
-      localStorage.setItem('profilePictureURL', url);
+      writeScopedValue('profilePictureURL', url);
     };
     reader.readAsDataURL(file);
   };
 
-  const startEdit = (field) => setEditing(prev => ({ ...prev, [field]: true }));
-  const cancelEdit = (field) => {
-    // revert to saved values
-    const saved = {
-      name: localStorage.getItem('displayName') || 'Your Name',
-      dob: localStorage.getItem('dateOfBirth') || '',
-      institution: localStorage.getItem('institution') || 'Your Institution',
-      location: localStorage.getItem('location') || 'Select location',
-      linkA: localStorage.getItem('linkA') || '',
-      linkB: localStorage.getItem('linkB') || ''
-    };
-    if (field === 'name') setName(saved.name);
-    if (field === 'dob') setDob(saved.dob);
-    if (field === 'institution') setInstitution(saved.institution);
-    if (field === 'location') setLocation(saved.location);
-    if (field === 'linkA') setLinkA(saved.linkA);
-    if (field === 'linkB') setLinkB(saved.linkB);
-    setEditing(prev => ({ ...prev, [field]: false }));
+  const resetFromScopedStorage = () => {
+    setName(readScopedValue('displayName', 'Your Name'));
+    setDob(readScopedValue('dateOfBirth', ''));
+    setInstitution(readScopedValue('institution', 'FAST NUCES'));
+    setLinkA(readScopedValue('linkA', ''));
+    setLinkB(readScopedValue('linkB', ''));
+    setProfilePictureDataUrl(readScopedValue('profilePictureURL', ''));
   };
 
-  const saveField = (field) => {
-    if (field === 'name') localStorage.setItem('displayName', name);
-    if (field === 'dob') localStorage.setItem('dateOfBirth', dob);
-    if (field === 'institution') localStorage.setItem('institution', institution);
-    if (field === 'location') localStorage.setItem('location', location);
-    if (field === 'linkA') localStorage.setItem('linkA', linkA);
-    if (field === 'linkB') localStorage.setItem('linkB', linkB);
-    setEditing(prev => ({ ...prev, [field]: false }));
-  };
-
-  const handleFullSave = (e) => {
+  const handleFullSave = async (e) => {
     e.preventDefault();
-    localStorage.setItem('displayName', name);
-    if (dob) localStorage.setItem('dateOfBirth', dob);
-    if (institution) localStorage.setItem('institution', institution);
-    if (location) localStorage.setItem('location', location);
-    if (linkA) localStorage.setItem('linkA', linkA);
-    if (linkB) localStorage.setItem('linkB', linkB);
-    alert('Profile saved locally.');
-  };
+    const userId = localStorage.getItem('userID') || localStorage.getItem('userId');
 
-  const FieldRow = ({ label, value, fieldKey, editable = true, children }) => (
-    <div className="flex items-center gap-3">
-      <div className="w-36 text-sm font-medium text-slate-700">{label}</div>
-      <div className="flex-1">
-        {editing[fieldKey] ? (
-          <div className="flex items-center gap-2">
-            {children}
-            <button type="button" onClick={() => saveField(fieldKey)} aria-label="save" className="rounded px-2 py-1 bg-emerald-600 text-white text-sm">✓</button>
-            <button type="button" onClick={() => cancelEdit(fieldKey)} aria-label="cancel" className="rounded px-2 py-1 bg-white border text-sm">✕</button>
-          </div>
-        ) : (
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-slate-800">{value || <span className="text-slate-400">Not set</span>}</div>
-            {editable && (
-              <button type="button" onClick={() => startEdit(fieldKey)} aria-label={`Edit ${label}`} className="ml-3 inline-flex items-center p-1 rounded hover:bg-slate-100">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-600" viewBox="0 0 20 20" fill="currentColor">
-                  <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" />
-                </svg>
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
+    localStorage.setItem('displayName', name);
+    if (email) localStorage.setItem('userEmail', email);
+    writeScopedValue('displayName', name);
+    writeScopedValue('dateOfBirth', dob || '');
+    writeScopedValue('institution', institution || '');
+    writeScopedValue('linkA', linkA || '');
+    writeScopedValue('linkB', linkB || '');
+    writeScopedValue('profilePictureURL', profilePictureDataUrl || '');
+
+    if (!userId) {
+      alert('Profile saved locally. Please login again to sync with backend.');
+      return;
+    }
+
+    try {
+      setStatus('Saving profile...');
+      const [firstName, ...rest] = name.trim().split(/\s+/);
+      const lastName = rest.join(' ') || 'N/A';
+      const res = await fetch(`${API_BASE_URL}/api/profile/${encodeURIComponent(userId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          role: 'student',
+          firstName: firstName || null,
+          lastName,
+          department: institution || null,
+          year: null,
+          profilePictureURL: profilePictureDataUrl || null
+        })
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || 'Failed to save profile');
+      }
+
+      setStatus('Profile saved successfully.');
+      setIsEditing(false);
+    } catch (err) {
+      setStatus(err.message || 'Profile save failed');
+    }
+  };
 
   return (
     <main className="min-h-screen px-4 py-10">
@@ -140,6 +207,7 @@ export default function ProfilePage() {
         </header>
 
         <form onSubmit={handleFullSave} className="glass reveal-up w-full rounded-2xl p-6 md:p-8">
+          {status && <p className="mb-4 rounded-lg bg-[var(--surface-soft)] p-2 text-sm text-slate-700">{status}</p>}
           <div className="grid grid-cols-1 md:grid-cols-[150px_1fr] gap-6 items-start">
             <div className="flex flex-col items-center">
               <div className="relative">
@@ -152,7 +220,7 @@ export default function ProfilePage() {
                   )}
                 </div>
 
-                <button type="button" onClick={openFilePicker} className="absolute -right-1 -bottom-1 bg-white border rounded-full p-2 shadow-sm" aria-label="Change profile picture">
+                <button type="button" onClick={openFilePicker} disabled={!isEditing} className="absolute -right-1 -bottom-1 bg-white border rounded-full p-2 shadow-sm disabled:cursor-not-allowed disabled:opacity-60" aria-label="Change profile picture">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-700" viewBox="0 0 20 20" fill="currentColor">
                     <path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V8.414A2 2 0 0016.414 7L13 3.586A2 2 0 0011.586 3H4z" />
                   </svg>
@@ -165,50 +233,58 @@ export default function ProfilePage() {
             </div>
 
             <div className="space-y-4">
-              <FieldRow label="Name:" value={name} fieldKey="name" editable>
-                <input className="rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5 w-full" value={name} onChange={(e) => setName(e.target.value)} />
+              <FieldRow label="Name:" value={name} editable>
+                <input disabled={!isEditing} className="rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5 w-full disabled:bg-slate-50 disabled:text-slate-500" value={name} onChange={(e) => setName(e.target.value)} />
               </FieldRow>
 
-              <FieldRow label="ID:" value={studentId} fieldKey="studentId" editable={false}>
+              <FieldRow label="ID:" value={studentId} editable={false}>
                 {/* non-editable */}
               </FieldRow>
 
-              <FieldRow label="Date of Birth:" value={dob ? new Date(dob).toLocaleDateString() : ''} fieldKey="dob" editable>
-                <input type="date" className="rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5" value={dob} onChange={(e) => setDob(e.target.value)} />
+              <FieldRow label="Date of Birth:" value={dob ? new Date(dob).toLocaleDateString() : ''} editable>
+                <input disabled={!isEditing} type="date" className="rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5 disabled:bg-slate-50 disabled:text-slate-500" value={dob} onChange={(e) => setDob(e.target.value)} />
               </FieldRow>
 
-              <FieldRow label="E-mail:" value={email} fieldKey="email" editable={false}>
+              <FieldRow label="E-mail:" value={email} editable={false}>
                 {/* non-editable */}
               </FieldRow>
 
-              <FieldRow label="Institution:" value={institution} fieldKey="institution" editable>
-                <input className="rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5 w-full" value={institution} onChange={(e) => setInstitution(e.target.value)} />
-              </FieldRow>
-
-              <FieldRow label="Location:" value={location} fieldKey="location" editable>
-                <select className="rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5" value={location} onChange={(e) => setLocation(e.target.value)}>
-                  <option value="">Select location</option>
-                  <option value="Campus A">Campus A</option>
-                  <option value="Campus B">Campus B</option>
-                  <option value="Remote">Remote</option>
-                </select>
+              <FieldRow label="Department:" value={institution} editable>
+                <input disabled={!isEditing} className="rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5 w-full disabled:bg-slate-50 disabled:text-slate-500" value={institution} onChange={(e) => setInstitution(e.target.value)} />
               </FieldRow>
 
               <div>
                 <div className="text-sm font-medium text-slate-700 mb-2">Link Tree (optional)</div>
                 <div className="space-y-2">
-                  <FieldRow label="Linkdlin:" value={linkA} fieldKey="linkA" editable>
-                    <input placeholder="Facebook / LinkedIn / Instagram URL" className="rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5 w-full" value={linkA} onChange={(e) => setLinkA(e.target.value)} />
+                  <FieldRow label="LinkedIn:" value={linkA} editable>
+                    <input disabled={!isEditing} placeholder="Facebook / LinkedIn / Instagram URL" className="rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5 w-full disabled:bg-slate-50 disabled:text-slate-500" value={linkA} onChange={(e) => setLinkA(e.target.value)} />
                   </FieldRow>
 
-                  <FieldRow label="Github:" value={linkB} fieldKey="linkB" editable>
-                    <input placeholder="Other link" className="rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5 w-full" value={linkB} onChange={(e) => setLinkB(e.target.value)} />
+                  <FieldRow label="GitHub:" value={linkB} editable>
+                    <input disabled={!isEditing} placeholder="Other link" className="rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5 w-full disabled:bg-slate-50 disabled:text-slate-500" value={linkB} onChange={(e) => setLinkB(e.target.value)} />
                   </FieldRow>
                 </div>
               </div>
 
               <div className="mt-4 flex gap-3">
-                <button type="submit" className="cta px-4 py-2 font-semibold">Save Profile</button>
+                {!isEditing ? (
+                  <button type="button" onClick={() => setIsEditing(true)} className="cta px-4 py-2 font-semibold">Edit Profile</button>
+                ) : (
+                  <>
+                    <button type="submit" className="cta px-4 py-2 font-semibold">Save Profile</button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        resetFromScopedStorage();
+                        setIsEditing(false);
+                        setStatus('');
+                      }}
+                      className="rounded-md px-4 py-2 border border-[var(--stroke)] bg-white text-sm font-semibold hover:bg-[var(--surface-soft)]"
+                    >
+                      Cancel Edit
+                    </button>
+                  </>
+                )}
                 <Link href="/" className="rounded-md px-4 py-2 border border-[var(--stroke)] bg-white text-sm font-semibold hover:bg-[var(--surface-soft)]">Cancel</Link>
               </div>
             </div>

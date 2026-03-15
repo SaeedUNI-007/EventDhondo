@@ -21,26 +21,52 @@ router.post('/register', async (req, res) => {
         departmentId,
         year,
         yearOfStudy,
+        role,
+        studentProfile,
+        organizerProfile,
+        interests,
     } = req.body;
+
+    const normalizedRole = String(role || 'student').toLowerCase();
+    const isOrganizer = normalizedRole === 'organizer';
 
     const fullName = String(name || '').trim();
     const nameParts = fullName ? fullName.split(/\s+/) : [];
-    const firstName = (firstNameRaw || nameParts[0] || '').trim();
-    const lastName = (lastNameRaw || nameParts.slice(1).join(' ') || 'N/A').trim();
-    const finalDepartment = (departmentId || department || null);
-    const parsedYear = Number(yearOfStudy ?? year);
+    const studentFirstName = String(firstNameRaw || studentProfile?.firstName || nameParts[0] || '').trim();
+    const studentLastName = String(lastNameRaw || studentProfile?.lastName || nameParts.slice(1).join(' ') || 'N/A').trim();
+    const studentDepartment = String(departmentId || department || studentProfile?.department || '').trim() || null;
+    const parsedYear = Number(yearOfStudy ?? year ?? studentProfile?.yearOfStudy);
 
-    if (!email || !password || !firstName) {
+    const orgName = String(organizerProfile?.organizationName || '').trim();
+    const orgDescription = String(organizerProfile?.description || '').trim() || null;
+    const orgContactEmail = String(organizerProfile?.contactEmail || '').trim();
+    const orgProfilePicture = organizerProfile?.profilePictureURL || null;
+
+    if (!email || !password) {
         return res.status(400).json({
             success: false,
-            message: 'email, password and student name are required',
+            message: 'email and password are required',
         });
     }
 
-    if (!Number.isInteger(parsedYear) || parsedYear < 1 || parsedYear > 4) {
+    if (!isOrganizer) {
+        if (!studentFirstName) {
+            return res.status(400).json({
+                success: false,
+                message: 'firstName is required for student registration',
+            });
+        }
+
+        if (!Number.isInteger(parsedYear) || parsedYear < 1 || parsedYear > 8) {
+            return res.status(400).json({
+                success: false,
+                message: 'yearOfStudy must be between 1 and 8',
+            });
+        }
+    } else if (!orgName || !orgContactEmail) {
         return res.status(400).json({
             success: false,
-            message: 'yearOfStudy must be between 1 and 4 for BS degree',
+            message: 'organizationName and contactEmail are required for organizer registration',
         });
     }
 
@@ -63,24 +89,78 @@ router.post('/register', async (req, res) => {
             const userInsert = await new sql.Request(transaction)
                 .input('Email', sql.NVarChar(100), email)
                 .input('PasswordHash', sql.NVarChar(255), hashedPassword)
+                .input('Role', sql.NVarChar(10), isOrganizer ? 'Organizer' : 'Student')
+                .input('VerificationStatus', sql.NVarChar(10), isOrganizer ? 'Pending' : 'Verified')
                 .query(`
                     INSERT INTO Users (Email, PasswordHash, Role, VerificationStatus)
                     OUTPUT INSERTED.UserID
-                    VALUES (@Email, @PasswordHash, 'Student', 'Verified')
+                    VALUES (@Email, @PasswordHash, @Role, @VerificationStatus)
                 `);
 
             const newUserId = userInsert.recordset?.[0]?.UserID;
 
-            await new sql.Request(transaction)
-                .input('UserID', sql.Int, newUserId)
-                .input('FirstName', sql.NVarChar(50), firstName)
-                .input('LastName', sql.NVarChar(50), lastName)
-                .input('Department', sql.NVarChar(100), finalDepartment)
-                .input('YearOfStudy', sql.Int, parsedYear)
-                .query(`
-                    INSERT INTO StudentProfiles (UserID, FirstName, LastName, Department, YearOfStudy)
-                    VALUES (@UserID, @FirstName, @LastName, @Department, @YearOfStudy)
-                `);
+            if (isOrganizer) {
+                await new sql.Request(transaction)
+                    .input('UserID', sql.Int, newUserId)
+                    .input('OrganizationName', sql.NVarChar(150), orgName)
+                    .input('Description', sql.NVarChar(sql.MAX), orgDescription)
+                    .input('ContactEmail', sql.NVarChar(100), orgContactEmail)
+                    .input('ProfilePictureURL', sql.NVarChar(255), orgProfilePicture)
+                    .query(`
+                        INSERT INTO OrganizerProfiles (UserID, OrganizationName, Description, ContactEmail, ProfilePictureURL, VerificationStatus)
+                        VALUES (@UserID, @OrganizationName, @Description, @ContactEmail, @ProfilePictureURL, 'Pending')
+                    `);
+            } else {
+                await new sql.Request(transaction)
+                    .input('UserID', sql.Int, newUserId)
+                    .input('FirstName', sql.NVarChar(50), studentFirstName)
+                    .input('LastName', sql.NVarChar(50), studentLastName)
+                    .input('Department', sql.NVarChar(100), studentDepartment)
+                    .input('YearOfStudy', sql.Int, parsedYear)
+                    .query(`
+                        INSERT INTO StudentProfiles (UserID, FirstName, LastName, Department, YearOfStudy)
+                        VALUES (@UserID, @FirstName, @LastName, @Department, @YearOfStudy)
+                    `);
+            }
+
+            if (Array.isArray(interests) && interests.length > 0) {
+                for (const interestNameRaw of interests) {
+                    const interestName = String(interestNameRaw || '').trim();
+                    if (!interestName) {
+                        continue;
+                    }
+
+                    const existingInterest = await new sql.Request(transaction)
+                        .input('InterestName', sql.NVarChar(50), interestName)
+                        .query(`SELECT InterestID FROM Interests WHERE InterestName = @InterestName`);
+
+                    let interestId = existingInterest.recordset?.[0]?.InterestID;
+
+                    if (!interestId) {
+                        const insertedInterest = await new sql.Request(transaction)
+                            .input('InterestName', sql.NVarChar(50), interestName)
+                            .query(`
+                                INSERT INTO Interests (InterestName)
+                                OUTPUT INSERTED.InterestID
+                                VALUES (@InterestName)
+                            `);
+                        interestId = insertedInterest.recordset?.[0]?.InterestID;
+                    }
+
+                    if (interestId) {
+                        await new sql.Request(transaction)
+                            .input('UserID', sql.Int, newUserId)
+                            .input('InterestID', sql.Int, interestId)
+                            .query(`
+                                IF NOT EXISTS (SELECT 1 FROM UserInterests WHERE UserID = @UserID AND InterestID = @InterestID)
+                                BEGIN
+                                    INSERT INTO UserInterests (UserID, InterestID)
+                                    VALUES (@UserID, @InterestID)
+                                END
+                            `);
+                    }
+                }
+            }
 
             await transaction.commit();
         } catch (error) {
@@ -88,7 +168,10 @@ router.post('/register', async (req, res) => {
             throw error;
         }
         
-        res.status(201).json({ success: true, message: "Student registered successfully!" });
+        res.status(201).json({
+            success: true,
+            message: isOrganizer ? 'Organizer registered successfully!' : 'Student registered successfully!',
+        });
     } catch (err) {
         console.error("Registration Error:", err);
         if (err.number === 2627 || err.number === 2601) {

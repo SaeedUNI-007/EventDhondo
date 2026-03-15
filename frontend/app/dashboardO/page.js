@@ -22,12 +22,23 @@ export default function DashboardO() {
   const [eventTypes, setEventTypes] = useState([]);
   const [selectedType, setSelectedType] = useState("");
   const [dateOrder, setDateOrder] = useState("asc");
+  const [searchTerm, setSearchTerm] = useState("");
   const [removeCandidate, setRemoveCandidate] = useState("");
-  const organizerId = typeof window !== "undefined" ? localStorage.getItem("userId") : null;
+  const organizerId = typeof window !== "undefined"
+    ? (localStorage.getItem("userID") || localStorage.getItem("userId"))
+    : null;
 
   useEffect(() => {
-    const savedName = localStorage.getItem("displayName");
-    const savedEmail = localStorage.getItem("userEmail");
+    const savedName = organizerId
+      ? (
+        localStorage.getItem(`displayName:${organizerId}`)
+        || localStorage.getItem(`organizationName:${organizerId}`)
+        || localStorage.getItem("displayName")
+      )
+      : localStorage.getItem("displayName");
+    const savedEmail = organizerId
+      ? (localStorage.getItem(`userEmail:${organizerId}`) || localStorage.getItem("userEmail"))
+      : localStorage.getItem("userEmail");
     if (savedName) setOrgName(savedName);
     if (savedEmail) setUserEmail(savedEmail);
 
@@ -74,14 +85,16 @@ export default function DashboardO() {
 
     try {
       // attempt backend delete, if API exists
-      const res = await fetch(`${API_BASE_URL}/api/events/${encodeURIComponent(removeCandidate)}`, { method: "DELETE" });
+      const res = await fetch(
+        `${API_BASE_URL}/api/events/${encodeURIComponent(removeCandidate)}?organizerId=${encodeURIComponent(organizerId || "")}`,
+        { method: "DELETE" }
+      );
       if (res.ok || res.status === 404) {
         // update client state
-        setEvents((prev) => prev.filter((e) => String(e.EventID || e.id || "") !== String(removeCandidate)));
-        setRemoveCandidate(() => {
-          const next = events.find((e) => String(e.EventID || e.id || "") !== String(removeCandidate));
-          return next ? (next.EventID || next.id || "") : "";
-        });
+        const nextEvents = events.filter((e) => String(e.EventID || e.id || "") !== String(removeCandidate));
+        setEvents(nextEvents);
+        const next = nextEvents[0];
+        setRemoveCandidate(next ? (next.EventID || next.id || "") : "");
       } else {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.message || "Failed to delete event");
@@ -94,9 +107,14 @@ export default function DashboardO() {
   // apply client-side filters/sorting
   const visibleEvents = events
     .filter((e) => {
+      const search = searchTerm.trim().toLowerCase();
+      const matchesSearch = !search || [e.Title, e.title, e.Description, e.description, e.Venue, e.venue]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(search));
+
       // filter by EventType from schema; empty = all
-      if (!selectedType) return true;
-      return String(e.EventType || e.EventCategory || "").toLowerCase() === String(selectedType).toLowerCase();
+      const matchesType = !selectedType || String(e.EventType || e.EventCategory || "").toLowerCase() === String(selectedType).toLowerCase();
+      return matchesSearch && matchesType;
     })
     .sort((a, b) => {
       const da = a.EventDate ? new Date(a.EventDate) : new Date(a.date || null);
@@ -109,7 +127,9 @@ export default function DashboardO() {
   const NAV_ITEMS = [{ label: "Dashboard", href: "/dashboardO" }];
 
   const SidePanelContent = ({ compact = false }) => {
-    const profilePic = localStorage.getItem("profilePictureURL") || "";
+    const profilePic = organizerId
+      ? (localStorage.getItem(`profilePictureURL:${organizerId}`) || "")
+      : (localStorage.getItem("profilePictureURL") || "");
     return (
       <div className={`flex flex-col ${compact ? "items-start p-3" : "items-center py-8 px-6"} h-full`}>
         <div className="w-full flex items-center justify-between mb-6">
@@ -155,23 +175,24 @@ export default function DashboardO() {
   return (
     <main className="min-h-screen px-0 py-8">
       <div className="shell mx-auto max-w-[1200px]">
-        <header className="glass reveal-up rounded-2xl p-5 md:p-7 mb-4 flex items-center justify-between">
-          <div>
+        <header className="glass reveal-up rounded-2xl p-5 md:p-7 mb-4 lg:ml-80">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div className="min-w-0">
             <p className="text-sm font-semibold uppercase tracking-wide text-[var(--brand-strong)]">Organization Dashboard</p>
-            <h1 className="mt-1 text-3xl font-extrabold md:text-4xl">Welcome, {orgName}!</h1>
+            <h1 className="mt-1 text-2xl font-extrabold md:text-4xl break-words">Welcome, {orgName}!</h1>
             {userEmail && <p className="mt-2 text-sm text-slate-600">Signed in as {userEmail}</p>}
           </div>
 
-          <div className="hidden md:flex items-center gap-3">
-            <Link href="/events/new" className="cta inline-flex items-center px-4 py-2 font-semibold">+ Add Event</Link>
-
-            {/* removed profile button here (profile accessible via pencil on side panel) */}
-            {/* new Remove Event control: select + button */}
-            <div className="inline-flex items-center gap-2 bg-white rounded-md p-2 border border-[var(--stroke)]">
+          <div className="flex flex-col gap-2 md:items-end">
+            <div className="flex flex-wrap items-center gap-2">
+              <Link href="/" className="rounded-xl border border-[var(--stroke)] bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-[var(--surface-soft)]">Back to Home</Link>
+              <Link href="/events/new" className="cta inline-flex items-center px-4 py-2 font-semibold">+ Add Event</Link>
+            </div>
+            <div className="inline-flex items-center gap-2 bg-white rounded-md p-2 border border-[var(--stroke)] w-full md:w-auto">
               <select
                 value={removeCandidate}
                 onChange={(e) => setRemoveCandidate(e.target.value)}
-                className="bg-white px-2 py-1 rounded-md text-sm border border-transparent"
+                className="bg-white px-2 py-1 rounded-md text-sm border border-transparent min-w-0 w-full md:w-56"
                 aria-label="Select event to remove"
               >
                 <option value="">Select event</option>
@@ -184,31 +205,45 @@ export default function DashboardO() {
               <button onClick={handleRemoveEvent} className="rounded-md bg-rose-600 text-white px-3 py-1 text-sm font-semibold">Remove Event</button>
             </div>
           </div>
+          </div>
         </header>
 
         {/* filter controls aligned left below welcome bar */}
-        <div className="mx-auto max-w-[1200px] md:ml-80 px-4 mb-4">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-slate-700">Event Type</label>
-              <select value={selectedType} onChange={(e) => setSelectedType(e.target.value)} className="rounded-md border px-3 py-1">
-                <option value="">All types</option>
-                {eventTypes.map((it) => <option key={it} value={it}>{it}</option>)}
-              </select>
-            </div>
+        <div className="mx-auto max-w-[1200px] lg:ml-80 px-4 mb-4">
+          <div className="glass rounded-2xl p-4 md:p-5">
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-slate-700">Search</label>
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search title, description, venue"
+                  className="rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm"
+                />
+              </div>
 
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-slate-700">Date</label>
-              <select value={dateOrder} onChange={(e) => setDateOrder(e.target.value)} className="rounded-md border px-3 py-1">
-                <option value="asc">Ascending</option>
-                <option value="desc">Descending</option>
-              </select>
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-slate-700">Event Type</label>
+                <select value={selectedType} onChange={(e) => setSelectedType(e.target.value)} className="rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm">
+                  <option value="">All types</option>
+                  {eventTypes.map((it) => <option key={it} value={it}>{it}</option>)}
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-slate-700">Date</label>
+                <select value={dateOrder} onChange={(e) => setDateOrder(e.target.value)} className="rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm">
+                  <option value="asc">Ascending</option>
+                  <option value="desc">Descending</option>
+                </select>
+              </div>
             </div>
           </div>
         </div>
 
         {/* Permanent left column attached to page edge for md+ (matches student) */}
-        <div className="hidden md:block">
+        <div className="hidden lg:block">
           <aside className="fixed left-0 top-0 h-screen w-80 bg-[linear-gradient(180deg,#0f766e,#34d399)] border-r border-[var(--stroke)] z-10">
             <div className="sticky top-6 h-[calc(100vh-48px)] overflow-hidden">
               <SidePanelContent />
@@ -217,9 +252,9 @@ export default function DashboardO() {
         </div>
 
         {/* Main content container shifted right to make room for side panel */}
-        <div className="mx-auto max-w-[1200px] md:ml-80 px-4">
+        <div className="mx-auto max-w-[1200px] lg:ml-80 px-4">
           {/* Mobile inline panel */}
-          <div className="md:hidden mb-6">
+          <div className="lg:hidden mb-6">
             <div className="rounded-2xl bg-[var(--surface-soft)] p-4">
               <SidePanelContent compact />
             </div>
@@ -234,7 +269,7 @@ export default function DashboardO() {
             {loading && <p className="text-slate-600">Loading events...</p>}
             {error && <p className="rounded-lg bg-rose-50 p-3 text-[var(--danger)]">{error}</p>}
             {!loading && !error && visibleEvents.length === 0 && (
-              <p className="rounded-lg bg-[var(--surface-soft)] p-3 text-slate-600">No events found. Use "Add Event" to create one.</p>
+              <p className="rounded-lg bg-[var(--surface-soft)] p-3 text-slate-600">No events found. Use &quot;Add Event&quot; to create one.</p>
             )}
 
             <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">

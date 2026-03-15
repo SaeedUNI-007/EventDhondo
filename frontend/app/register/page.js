@@ -2,8 +2,11 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+const MAX_PROFILE_PICTURE_BYTES = 1024 * 1024;
+const NAV_LOGO_SRC = '/Logo.png';
 
 export default function Register() {
   const [role, setRole] = useState('student');
@@ -113,6 +116,14 @@ export default function Register() {
 
   const handleProfilePicture = (file) => {
     if (!file) { setProfilePictureDataUrl(''); return; }
+
+    if (file.size > MAX_PROFILE_PICTURE_BYTES) {
+      setError('Profile picture is too large. Please choose an image under 1 MB.');
+      setProfilePictureDataUrl('');
+      return;
+    }
+
+    setError('');
     const reader = new FileReader();
     reader.onload = () => setProfilePictureDataUrl(reader.result.toString());
     reader.readAsDataURL(file);
@@ -149,7 +160,6 @@ export default function Register() {
         password,
         role,
         interests,
-        profilePicture: profilePictureDataUrl || null,
         studentProfile: null,
         organizerProfile: null
       };
@@ -193,6 +203,15 @@ export default function Register() {
 
   return (
     <main className="min-h-screen px-4 py-10">
+      <nav className="glass reveal-up mx-auto mb-6 flex max-w-5xl items-center justify-between rounded-2xl px-4 py-3 md:px-6 md:py-4">
+        <Link href="/" className="flex items-center gap-2">
+          <Image src={NAV_LOGO_SRC} alt="EventDhondo logo" width={28} height={28} />
+          <p className="text-lg font-bold text-[var(--brand-strong)] md:text-2xl">EventDhondo</p>
+        </Link>
+        <Link href="/" className="rounded-xl border border-[var(--stroke)] bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-[var(--surface-soft)]">
+          Back to Home
+        </Link>
+      </nav>
       <div className="mx-auto grid max-w-5xl gap-6 md:grid-cols-[0.95fr_1.05fr]">
         <section className="surface-card reveal-up hidden p-8 md:block">
           <p className="inline-block rounded-full bg-[var(--surface-soft)] px-3 py-1 text-xs font-bold text-[var(--brand-strong)]">NEW HERE</p>
@@ -252,7 +271,7 @@ export default function Register() {
                   <select className="w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5" value={program} onChange={(e) => onProgramChange(e.target.value)}>
                     {PROGRAM_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
                   </select>
-                  <p className="mt-1 text-xs text-slate-500">Choose the exact program (e.g. "BS - CS", "MBA - Business")</p>
+                  <p className="mt-1 text-xs text-slate-500">Choose the exact program (e.g. &quot;BS - CS&quot;, &quot;MBA - Business&quot;)</p>
                 </div>
 
                 <div>

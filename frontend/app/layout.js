@@ -14,6 +14,11 @@ const sora = Sora({
 export const metadata = {
   title: "EventDhundo | Campus Discovery",
   description: "Centralized campus event discovery platform",
+  icons: {
+    icon: '/Logo.png',
+    shortcut: '/Logo.png',
+    apple: '/Logo.png',
+  },
 };
 
 export default function RootLayout({ children }) {

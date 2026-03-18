@@ -7,8 +7,7 @@ const dbConfig = {
     password: process.env.DB_PASSWORD,     // Added process.env.
     server: process.env.DB_SERVER,         // Added process.env.
     database: process.env.DB_DATABASE,     // Added process.env.
-    options: {
-        instanceName: 'SQLEXPRESS', 
+    options: { 
         encrypt: false, 
         trustServerCertificate: true 
     },

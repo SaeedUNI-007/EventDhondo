@@ -86,6 +86,25 @@ GO
 -- SPRINT #2: CORE OPERATIONS STORED PROCEDURES
 -- =========================================================================
 
+-- 0. Add a Single Notification
+IF OBJECT_ID(N'dbo.sp_AddNotification', N'P') IS NOT NULL
+    DROP PROCEDURE dbo.sp_AddNotification;
+GO
+
+CREATE PROCEDURE dbo.sp_AddNotification
+    @UserID INT,
+    @Title NVARCHAR(255),
+    @Message NVARCHAR(MAX),
+    @EventID INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    INSERT INTO [dbo].[Notifications] (UserID, Title, Message, RelatedEventID, Status)
+    VALUES (@UserID, @Title, @Message, @EventID, 'Pending');
+END;
+GO
+
 -- 1. Register for an Event (with Capacity Check)
 -- 1. Register for an Event (with Capacity Check & Concurrency Control)
 IF OBJECT_ID(N'dbo.sp_RegisterForEvent', N'P') IS NOT NULL
@@ -360,25 +379,6 @@ BEGIN
         IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
         SELECT 'Error: ' + ERROR_MESSAGE() AS Message;
     END CATCH
-END;
-GO
-
--- 6. Add a Single Notification
-IF OBJECT_ID(N'dbo.sp_AddNotification', N'P') IS NOT NULL
-    DROP PROCEDURE dbo.sp_AddNotification;
-GO
-
-CREATE PROCEDURE dbo.sp_AddNotification
-    @UserID INT,
-    @Title NVARCHAR(255),
-    @Message NVARCHAR(MAX),
-    @EventID INT = NULL
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    INSERT INTO [dbo].[Notifications] (UserID, Title, Message, RelatedEventID, Status)
-    VALUES (@UserID, @Title, @Message, @EventID, 'Pending');
 END;
 GO
 

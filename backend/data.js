@@ -249,8 +249,8 @@ router.get('/profile/:id', async (req, res) => {
         const studentResult = await pool.request()
             .input('UserID', sql.Int, req.params.id)
             .query(`
-                SELECT u.Email, s.FirstName, s.LastName, s.Department, s.YearOfStudy, 
-                       s.LinkedInURL, s.GitHubURL 
+              SELECT u.UserID, u.Email, s.FirstName, s.LastName, s.Department, s.YearOfStudy,
+                                    s.DateOfBirth, s.ProfilePictureURL, s.LinkedInURL, s.GitHubURL
                 FROM Users u 
                 JOIN StudentProfiles s ON u.UserID = s.UserID 
                 WHERE u.UserID = @UserID`);
@@ -262,20 +262,29 @@ router.get('/profile/:id', async (req, res) => {
 
 // 4. PUT Profile (Updated to save LinkedIn/GitHub)
 router.put('/profile/:id', async (req, res) => {
-    const { firstName, lastName, department, year, linkedInURL, gitHubURL, interests } = req.body;
+    const { firstName, lastName, department, year, dateOfBirth, profilePictureURL, linkedInURL, gitHubURL, interests } = req.body;
     try {
         const pool = await poolPromise;
+        const parsedDob = dateOfBirth ? new Date(dateOfBirth) : null;
+
+        if (dateOfBirth && Number.isNaN(parsedDob?.getTime())) {
+            return res.status(400).json({ success: false, message: 'dateOfBirth must be a valid date' });
+        }
+
         await pool.request()
             .input('UserID', sql.Int, req.params.id)
             .input('FirstName', sql.NVarChar(50), firstName || null)
             .input('LastName', sql.NVarChar(50), lastName || null)
             .input('Department', sql.NVarChar(100), department || null)
             .input('Year', sql.Int, Number.isInteger(Number(year)) ? Number(year) : null)
+            .input('DateOfBirth', sql.Date, dateOfBirth ? parsedDob : null)
+            .input('ProfilePictureURL', sql.NVarChar(sql.MAX), profilePictureURL || null)
             .input('LinkedIn', sql.NVarChar(255), linkedInURL || null)
             .input('GitHub', sql.NVarChar(255), gitHubURL || null)
             .query(`UPDATE StudentProfiles 
                     SET FirstName = @FirstName, LastName = @LastName, 
-                        Department = @Department, YearOfStudy = @Year,
+                        Department = @Department, YearOfStudy = COALESCE(@Year, YearOfStudy),
+                        DateOfBirth = @DateOfBirth, ProfilePictureURL = @ProfilePictureURL,
                         LinkedInURL = @LinkedIn, GitHubURL = @GitHub
                     WHERE UserID = @UserID`);
         

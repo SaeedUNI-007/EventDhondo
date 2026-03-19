@@ -1,10 +1,11 @@
 USE [EventDhondo];
 GO
 
-USE [EventDhondo];
+IF OBJECT_ID(N'dbo.vw_UpcomingEvents', N'V') IS NULL
+    EXEC('CREATE VIEW dbo.vw_UpcomingEvents AS SELECT 1 AS Placeholder;');
 GO
 
-ALTER VIEW vw_UpcomingEvents AS
+ALTER VIEW dbo.vw_UpcomingEvents AS
 SELECT 
     e.EventID,
     e.Title,

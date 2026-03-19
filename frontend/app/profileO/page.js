@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-
+////////////////////
 export default function ProfileO() {
   const [orgName, setOrgName] = useState("Organization Name");
   const [description, setDescription] = useState("Not set");

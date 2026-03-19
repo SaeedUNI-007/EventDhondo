@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-
+///////////////////
 export default function ProfilePage() {
   const [name, setName] = useState('');
   const [studentId, setStudentId] = useState('');

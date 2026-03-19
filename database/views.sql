@@ -4,7 +4,7 @@ GO
 USE [EventDhondo];
 GO
 
-CREATE OR ALTER VIEW vw_UpcomingEvents AS
+ALTER VIEW vw_UpcomingEvents AS
 SELECT 
     e.EventID,
     e.Title,

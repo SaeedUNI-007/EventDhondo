@@ -381,3 +381,28 @@ BEGIN
     VALUES (@UserID, @Title, @Message, @EventID, 'Pending');
 END;
 GO
+
+USE [EventDhondo];
+GO
+
+ALTER PROCEDURE dbo.sp_UpdateStudentProfile
+    @UserID INT,
+    @FirstName NVARCHAR(50),
+    @LastName NVARCHAR(50),
+    @Department NVARCHAR(100),
+    @YearOfStudy INT,
+    @LinkedInURL NVARCHAR(255),
+    @GitHubURL NVARCHAR(255)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE [dbo].[StudentProfiles]
+    SET FirstName = @FirstName,
+        LastName = @LastName,
+        Department = @Department,
+        YearOfStudy = @YearOfStudy,
+        LinkedInURL = @LinkedInURL,
+        GitHubURL = @GitHubURL
+    WHERE UserID = @UserID;
+END;
+GO

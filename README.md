@@ -9,7 +9,7 @@ EventDhondo is a campus event discovery and management platform. It helps studen
 - Abdullah Saeed (24L-2529)
 
 ## Tech Stack
-- Backend: Node.js, Express, mssql, bcrypt
+- Backend: Node.js, Express, mssql, bcrypt, Enterprise
 - Frontend: Next.js (React)
 - Database: Microsoft SQL Server
 

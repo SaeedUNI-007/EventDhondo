@@ -232,29 +232,61 @@ router.delete('/events/:id', async (req, res) => {
 
 // 3. GET Profile (Updated to return LinkedIn/GitHub)
 router.get('/profile/:id', async (req, res) => {
+    const userId = Number(req.params.id);
+    if (!Number.isInteger(userId) || userId <= 0) {
+        return res.status(400).json({ success: false, message: 'Valid user id is required' });
+    }
+
     try {
         const pool = await poolPromise;
         const userResult = await pool.request()
-            .input('UserID', sql.Int, req.params.id)
+            .input('UserID', sql.Int, userId)
             .query(`SELECT UserID, Email, Role FROM Users WHERE UserID = @UserID`);
 
         const user = userResult.recordset?.[0];
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-        if (user.Role === 'Organizer') {
-            // ... (Organizer logic remains the same)
-            return res.json(user);
+        if (String(user.Role || '').toLowerCase() === 'organizer') {
+            const organizerResult = await pool.request()
+                .input('UserID', sql.Int, userId)
+                .query(`
+                    SELECT
+                        u.UserID,
+                        u.Email,
+                        u.Role,
+                        o.OrganizationName,
+                        o.Description,
+                        o.ContactEmail,
+                        o.ProfilePictureURL,
+                        o.VerificationStatus
+                    FROM Users u
+                    JOIN OrganizerProfiles o ON u.UserID = o.UserID
+                    WHERE u.UserID = @UserID
+                `);
+
+            const organizerProfile = organizerResult.recordset?.[0] || null;
+            if (!organizerProfile) {
+                return res.status(404).json({ success: false, message: 'Organizer profile not found' });
+            }
+
+            return res.json(organizerProfile);
         }
 
         const studentResult = await pool.request()
-            .input('UserID', sql.Int, req.params.id)
+            .input('UserID', sql.Int, userId)
             .query(`
               SELECT u.UserID, u.Email, s.FirstName, s.LastName, s.Department, s.YearOfStudy,
                                     s.DateOfBirth, s.ProfilePictureURL, s.LinkedInURL, s.GitHubURL
                 FROM Users u 
                 JOIN StudentProfiles s ON u.UserID = s.UserID 
                 WHERE u.UserID = @UserID`);
-        res.json(studentResult.recordset?.[0] || null);
+
+        const studentProfile = studentResult.recordset?.[0] || null;
+        if (!studentProfile) {
+            return res.status(404).json({ success: false, message: 'Student profile not found' });
+        }
+
+        res.json(studentProfile);
     } catch (err) {
         res.status(500).send(err.message);
     }
@@ -262,9 +294,72 @@ router.get('/profile/:id', async (req, res) => {
 
 // 4. PUT Profile (Updated to save LinkedIn/GitHub)
 router.put('/profile/:id', async (req, res) => {
-    const { firstName, lastName, department, year, dateOfBirth, profilePictureURL, linkedInURL, gitHubURL, interests } = req.body;
+    const {
+        role,
+        firstName,
+        lastName,
+        department,
+        year,
+        dateOfBirth,
+        profilePictureURL,
+        linkedInURL,
+        gitHubURL,
+        interests,
+        organizationName,
+        description,
+        contactEmail,
+    } = req.body;
+
+    const userId = Number(req.params.id);
+    if (!Number.isInteger(userId) || userId <= 0) {
+        return res.status(400).json({ success: false, message: 'Valid user id is required' });
+    }
+
     try {
         const pool = await poolPromise;
+
+        const userResult = await pool.request()
+            .input('UserID', sql.Int, userId)
+            .query('SELECT UserID, Role FROM Users WHERE UserID = @UserID');
+
+        const user = userResult.recordset?.[0];
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        const dbRole = String(user.Role || '').toLowerCase();
+        const requestedRole = String(role || '').toLowerCase();
+        const effectiveRole = requestedRole || dbRole;
+
+        if (effectiveRole === 'organizer' || dbRole === 'organizer') {
+            const normalizedOrgName = String(organizationName || '').trim() || null;
+            const normalizedDescription = description === undefined ? undefined : (String(description || '').trim() || null);
+            const normalizedContactEmail = String(contactEmail || '').trim() || null;
+            const normalizedProfilePicture = profilePictureURL || null;
+
+            const organizerUpdate = pool.request()
+                .input('UserID', sql.Int, userId)
+                .input('OrganizationName', sql.NVarChar(150), normalizedOrgName)
+                .input('Description', sql.NVarChar(sql.MAX), normalizedDescription)
+                .input('ContactEmail', sql.NVarChar(100), normalizedContactEmail)
+                .input('ProfilePictureURL', sql.NVarChar(sql.MAX), normalizedProfilePicture)
+                .query(`
+                    UPDATE OrganizerProfiles
+                    SET OrganizationName = COALESCE(@OrganizationName, OrganizationName),
+                        Description = COALESCE(@Description, Description),
+                        ContactEmail = COALESCE(@ContactEmail, ContactEmail),
+                        ProfilePictureURL = @ProfilePictureURL
+                    WHERE UserID = @UserID
+                `);
+
+            const result = await organizerUpdate;
+            if ((result.rowsAffected?.[0] || 0) === 0) {
+                return res.status(404).json({ success: false, message: 'Organizer profile not found' });
+            }
+
+            return res.json({ success: true, role: 'Organizer' });
+        }
+
         const parsedDob = dateOfBirth ? new Date(dateOfBirth) : null;
 
         if (dateOfBirth && Number.isNaN(parsedDob?.getTime())) {
@@ -272,7 +367,7 @@ router.put('/profile/:id', async (req, res) => {
         }
 
         await pool.request()
-            .input('UserID', sql.Int, req.params.id)
+            .input('UserID', sql.Int, userId)
             .input('FirstName', sql.NVarChar(50), firstName || null)
             .input('LastName', sql.NVarChar(50), lastName || null)
             .input('Department', sql.NVarChar(100), department || null)
@@ -290,12 +385,12 @@ router.put('/profile/:id', async (req, res) => {
         
         // Interest deletion/insertion logic remains the same
         if (Array.isArray(interests)) {
-            await pool.request().input('UserID', sql.Int, req.params.id).query(`DELETE FROM UserInterests WHERE UserID = @UserID`);
+            await pool.request().input('UserID', sql.Int, userId).query(`DELETE FROM UserInterests WHERE UserID = @UserID`);
             for (const interestId of interests) {
-                await pool.request().input('UserID', sql.Int, req.params.id).input('InterestID', sql.Int, interestId).query(`INSERT INTO UserInterests (UserID, InterestID) VALUES (@UserID, @InterestID)`);
+                await pool.request().input('UserID', sql.Int, userId).input('InterestID', sql.Int, interestId).query(`INSERT INTO UserInterests (UserID, InterestID) VALUES (@UserID, @InterestID)`);
             }
         }
-        res.json({ success: true });
+        res.json({ success: true, role: 'Student' });
     } catch (err) {
         res.status(500).send(err.message);
     }

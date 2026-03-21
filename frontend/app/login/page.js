@@ -43,7 +43,9 @@ export default function Login() {
         localStorage.setItem('displayName', safeDisplayName);
         localStorage.setItem(`displayName:${resolvedUserId}`, safeDisplayName);
 
-        if (resolvedRole.toLowerCase() === 'organizer') {
+        if (resolvedRole.toLowerCase() === 'admin') {
+          router.push('/dashboardA');
+        } else if (resolvedRole.toLowerCase() === 'organizer') {
           router.push('/dashboardO');
         } else {
           router.push('/dashboard');

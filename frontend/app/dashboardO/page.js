@@ -127,9 +127,13 @@ export default function DashboardO() {
   const NAV_ITEMS = [{ label: "Dashboard", href: "/dashboardO" }];
 
   const SidePanelContent = ({ compact = false }) => {
-    const profilePic = organizerId
-      ? (localStorage.getItem(`profilePictureURL:${organizerId}`) || "")
-      : (localStorage.getItem("profilePictureURL") || "");
+    const profilePic = typeof window !== "undefined"
+      ? (
+        organizerId
+          ? (localStorage.getItem(`profilePictureURL:${organizerId}`) || "")
+          : (localStorage.getItem("profilePictureURL") || "")
+      )
+      : "";
     return (
       <div className={`flex flex-col ${compact ? "items-start p-3" : "items-center py-8 px-6"} h-full`}>
         <div className="w-full flex items-center justify-between mb-6">
@@ -168,6 +172,15 @@ export default function DashboardO() {
             ))}
           </ul>
         </nav>
+
+        <div className={`w-full mt-6 border-t ${compact ? "border-slate-200 pt-3" : "border-white/25 pt-4"}`}>
+          <Link
+            href="/"
+            className={`${compact ? "text-slate-700 hover:text-slate-900" : "text-white/85 hover:text-white"} text-sm font-medium`}
+          >
+            Return to Home
+          </Link>
+        </div>
       </div>
     );
   };
@@ -185,7 +198,6 @@ export default function DashboardO() {
 
           <div className="flex flex-col gap-2 md:items-end">
             <div className="flex flex-wrap items-center gap-2">
-              <Link href="/" className="rounded-xl border border-[var(--stroke)] bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-[var(--surface-soft)]">Back to Home</Link>
               <Link href="/events/new" className="cta inline-flex items-center px-4 py-2 font-semibold">+ Add Event</Link>
             </div>
             <div className="inline-flex items-center gap-2 bg-white rounded-md p-2 border border-[var(--stroke)] w-full md:w-auto">

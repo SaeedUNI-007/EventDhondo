@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import RegisterBranding from '@/components/RegisterBranding';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 const MAX_PROFILE_PICTURE_BYTES = 1024 * 1024;
@@ -220,11 +221,7 @@ export default function Register() {
       </nav>
 
       <div className="mx-auto grid max-w-5xl gap-6 md:grid-cols-[0.95fr_1.05fr]">
-        <section className="surface-card reveal-up hidden p-8 md:block">
-          <p className="inline-block rounded-full bg-[var(--surface-soft)] px-3 py-1 text-xs font-bold text-[var(--brand-strong)]">NEW HERE</p>
-          <h1 className="mt-4 text-4xl font-extrabold leading-tight">Create Your Event Identity</h1>
-          <p className="mt-4 text-slate-600">Join EventDhondo to find technical competitions, sports events, and portfolio-worthy opportunities around campus.</p>
-        </section>
+        <RegisterBranding />
 
         <form onSubmit={handleSubmit} className="glass reveal-up stagger-1 w-full rounded-2xl p-6 md:p-8">
           <h2 className="text-3xl font-bold text-[var(--brand-strong)]">Create Account</h2>

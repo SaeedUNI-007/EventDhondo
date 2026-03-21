@@ -114,9 +114,13 @@ export default function Dashboard() {
   // left-side panel content (attached to left edge, wider, greenish background)
   const SidePanelContent = ({ compact = false }) => {
     const userId = typeof window !== 'undefined' ? (localStorage.getItem('userID') || localStorage.getItem('userId')) : '';
-    const profilePic = userId
-      ? (localStorage.getItem(`profilePictureURL:${userId}`) || '')
-      : (localStorage.getItem('profilePictureURL') || '');
+    const profilePic = typeof window !== 'undefined'
+      ? (
+        userId
+          ? (localStorage.getItem(`profilePictureURL:${userId}`) || '')
+          : (localStorage.getItem('profilePictureURL') || '')
+      )
+      : '';
     return (
       <div className={`flex flex-col ${compact ? 'items-start p-3' : 'items-center py-8 px-6'} h-full`}>
         <div className="w-full flex items-center justify-between mb-6">
@@ -155,6 +159,15 @@ export default function Dashboard() {
             ))}
           </ul>
         </nav>
+
+        <div className={`w-full mt-6 border-t ${compact ? 'border-slate-200 pt-3' : 'border-white/25 pt-4'}`}>
+          <Link
+            href="/"
+            className={`${compact ? 'text-slate-700 hover:text-slate-900' : 'text-white/85 hover:text-white'} text-sm font-medium`}
+          >
+            Return to Home
+          </Link>
+        </div>
       </div>
     );
   };
@@ -162,14 +175,13 @@ export default function Dashboard() {
   return (
     <main className="min-h-screen px-0 py-8">
       <div className="shell">
-        <header className="glass reveal-up rounded-2xl p-5 md:p-7 mx-auto max-w-[1200px] lg:ml-80">
+        <header className="glass reveal-up rounded-2xl p-5 md:p-7 mb-6 mx-auto max-w-[1200px] lg:ml-80">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <p className="text-sm font-semibold uppercase tracking-wide text-[var(--brand-strong)]">Dashboard</p>
               <h1 className="mt-1 text-3xl font-extrabold md:text-4xl">Welcome, {displayName}!</h1>
               <p className="mt-2 text-sm text-slate-600 md:text-base">Explore upcoming events tailored for your campus interests.</p>
             </div>
-            <Link href="/" className="rounded-xl border border-[var(--stroke)] bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-[var(--surface-soft)]">Back to Home</Link>
           </div>
         </header>
 

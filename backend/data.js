@@ -18,12 +18,41 @@ router.get('/interests', async (req, res) => {
 // 2. GET Events (Advanced Search & Filter)
 router.get('/events', async (req, res) => {
     try {
-        const { category, search, date } = req.query;
-        // vw_UpcomingEvents columns: Title, EventType, EventDate, Venue, Status, Category, etc.
-        let query = `SELECT * FROM vw_UpcomingEvents WHERE 1=1`;
+        const { category, search, date, organizerId } = req.query;
+        const hasOrganizerFilter = Number.isInteger(Number(organizerId));
+
+        // Student dashboard consumes published events from view.
+        // Organizer dashboard requests organizerId and gets raw events (including drafts).
+        let query = hasOrganizerFilter
+            ? `
+                SELECT
+                    e.EventID,
+                    e.OrganizerID,
+                    e.Title,
+                    e.Description,
+                    e.EventType,
+                    e.EventDate,
+                    e.EventTime,
+                    e.Venue,
+                    e.Capacity,
+                    e.Status,
+                    e.PosterURL,
+                    o.OrganizationName AS Organizer,
+                    o.ContactEmail AS OrganizerEmail,
+                    o.ProfilePictureURL AS OrganizerLogo,
+                    NULL AS Category
+                FROM Events e
+                JOIN OrganizerProfiles o ON e.OrganizerID = o.UserID
+                WHERE e.OrganizerID = @OrganizerID AND e.Status <> 'Cancelled'
+            `
+            : `SELECT * FROM vw_UpcomingEvents WHERE 1=1`;
 
         const pool = await poolPromise;
         const request = pool.request();
+
+        if (hasOrganizerFilter) {
+            request.input('OrganizerID', sql.Int, Number(organizerId));
+        }
 
         if (category) {
             query += ` AND Category = @Category`; // Corrected: Using 'Category' from the View
@@ -46,47 +75,322 @@ router.get('/events', async (req, res) => {
     }
 });
 
-// 3. GET Profile (Uses StudentProfiles table)
-router.get('/profile/:id', async (req, res) => {
+// 2.2 POST Register for Event (Sprint 2)
+router.post('/events/register', async (req, res) => {
+    const { userId, eventId } = req.body;
+
+    if (!Number.isInteger(Number(userId)) || !Number.isInteger(Number(eventId))) {
+        return res.status(400).json({ success: false, message: 'userId and eventId are required as integers' });
+    }
+
     try {
         const pool = await poolPromise;
         const result = await pool.request()
-            .input('UserID', sql.Int, req.params.id)
-            .query(`SELECT u.Email, s.FirstName, s.LastName, s.Department, s.YearOfStudy 
-                    FROM Users u 
-                    JOIN StudentProfiles s ON u.UserID = s.UserID 
-                    WHERE u.UserID = @UserID`); // Changed Table name to StudentProfiles
-        
-        res.json(result.recordset[0]);
+            .input('UserID', sql.Int, Number(userId))
+            .input('EventID', sql.Int, Number(eventId))
+            .execute('dbo.sp_RegisterForEvent');
+
+        const message = result.recordset?.[0]?.Message || 'Registration processed';
+        return res.json({ success: true, message });
+    } catch (err) {
+        return res.status(400).json({ success: false, message: err.message });
+    }
+});
+
+// 2.3 POST Event Check-In by QR code (Sprint 2)
+router.post('/events/check-in', async (req, res) => {
+    const { qrCode } = req.body;
+
+    if (!qrCode || !String(qrCode).trim()) {
+        return res.status(400).json({ success: false, message: 'qrCode is required' });
+    }
+
+    try {
+        const pool = await poolPromise;
+        const result = await pool.request()
+            .input('QRCode', sql.NVarChar(255), String(qrCode).trim())
+            .query(`
+                DECLARE @RegistrationID INT;
+
+                SELECT @RegistrationID = RegistrationID
+                FROM [dbo].[Registrations]
+                WHERE QRCode = @QRCode;
+
+                IF @RegistrationID IS NULL
+                BEGIN
+                    SELECT CAST(0 AS BIT) AS Success, 'Invalid QR code' AS Message;
+                    RETURN;
+                END
+
+                UPDATE [dbo].[Registrations]
+                SET Status = 'Attended'
+                WHERE RegistrationID = @RegistrationID;
+
+                IF NOT EXISTS (SELECT 1 FROM [dbo].[Attendance] WHERE RegistrationID = @RegistrationID)
+                BEGIN
+                    INSERT INTO [dbo].[Attendance] (RegistrationID)
+                    VALUES (@RegistrationID);
+                END
+
+                SELECT CAST(1 AS BIT) AS Success, 'Attendance marked!' AS Message;
+            `);
+
+        const payload = result.recordset?.[0];
+        if (!payload?.Success) {
+            return res.status(404).json({ success: false, message: payload?.Message || 'Invalid QR code' });
+        }
+
+        return res.json({ success: true, message: payload.Message });
+    } catch (err) {
+        return res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// 2.4 GET Notifications (Unread/unsent first) (Sprint 2)
+router.get('/notifications/:userId', async (req, res) => {
+    if (!Number.isInteger(Number(req.params.userId))) {
+        return res.status(400).json({ success: false, message: 'Valid userId is required' });
+    }
+
+    try {
+        const pool = await poolPromise;
+        const result = await pool.request()
+            .input('UserID', sql.Int, Number(req.params.userId))
+            .query(`
+                SELECT *
+                FROM [dbo].[Notifications]
+                WHERE UserID = @UserID
+                  AND Status IN ('Pending', 'Sent')
+                ORDER BY CreatedAt DESC
+            `);
+        return res.json(result.recordset);
+    } catch (err) {
+        console.error('Notification Error:', err);
+        return res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// 2.1 DELETE Event (Organizer dashboard)
+router.delete('/events/:id', async (req, res) => {
+    const eventId = Number(req.params.id);
+    const organizerId = Number(req.query.organizerId || req.body?.organizerId || 0);
+
+    if (!Number.isInteger(eventId) || eventId <= 0) {
+        return res.status(400).json({ success: false, message: 'Invalid event id' });
+    }
+
+    try {
+        const pool = await poolPromise;
+        const deleteRequest = pool.request().input('EventID', sql.Int, eventId);
+        const hasOrganizer = Number.isInteger(organizerId) && organizerId > 0;
+
+        let deleteSql = 'DELETE FROM Events WHERE EventID = @EventID';
+        if (hasOrganizer) {
+            deleteRequest.input('OrganizerID', sql.Int, organizerId);
+            deleteSql += ' AND OrganizerID = @OrganizerID';
+        }
+
+        try {
+            const result = await deleteRequest.query(deleteSql);
+            if ((result.rowsAffected?.[0] || 0) === 0) {
+                return res.status(404).json({ success: false, message: 'Event not found' });
+            }
+            return res.json({ success: true, message: 'Event deleted successfully' });
+        } catch (deleteErr) {
+            // If historical tables reference the event, archive it instead of hard-delete.
+            if (deleteErr?.number === 547) {
+                const archiveRequest = pool.request()
+                    .input('EventID', sql.Int, eventId)
+                    .input('Status', sql.NVarChar(20), 'Cancelled');
+
+                let archiveSql = 'UPDATE Events SET Status = @Status WHERE EventID = @EventID';
+                if (hasOrganizer) {
+                    archiveRequest.input('OrganizerID', sql.Int, organizerId);
+                    archiveSql += ' AND OrganizerID = @OrganizerID';
+                }
+
+                const archived = await archiveRequest.query(archiveSql);
+                if ((archived.rowsAffected?.[0] || 0) === 0) {
+                    return res.status(404).json({ success: false, message: 'Event not found' });
+                }
+
+                return res.json({
+                    success: true,
+                    softDeleted: true,
+                    message: 'Event has registrations/achievements, so it was archived as Cancelled instead of hard-deleted.',
+                });
+            }
+            throw deleteErr;
+        }
+    } catch (err) {
+        console.error('Delete Event Error:', err);
+        return res.status(500).json({ success: false, message: 'Failed to delete event' });
+    }
+});
+
+// ... existing imports ...
+
+// 3. GET Profile (Updated to return LinkedIn/GitHub)
+router.get('/profile/:id', async (req, res) => {
+    const userId = Number(req.params.id);
+    if (!Number.isInteger(userId) || userId <= 0) {
+        return res.status(400).json({ success: false, message: 'Valid user id is required' });
+    }
+
+    try {
+        const pool = await poolPromise;
+        const userResult = await pool.request()
+            .input('UserID', sql.Int, userId)
+            .query(`SELECT UserID, Email, Role FROM Users WHERE UserID = @UserID`);
+
+        const user = userResult.recordset?.[0];
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        if (String(user.Role || '').toLowerCase() === 'organizer') {
+            const organizerResult = await pool.request()
+                .input('UserID', sql.Int, userId)
+                .query(`
+                    SELECT
+                        u.UserID,
+                        u.Email,
+                        u.Role,
+                        o.OrganizationName,
+                        o.Description,
+                        o.ContactEmail,
+                        o.ProfilePictureURL,
+                        o.VerificationStatus
+                    FROM Users u
+                    JOIN OrganizerProfiles o ON u.UserID = o.UserID
+                    WHERE u.UserID = @UserID
+                `);
+
+            const organizerProfile = organizerResult.recordset?.[0] || null;
+            if (!organizerProfile) {
+                return res.status(404).json({ success: false, message: 'Organizer profile not found' });
+            }
+
+            return res.json(organizerProfile);
+        }
+
+        const studentResult = await pool.request()
+            .input('UserID', sql.Int, userId)
+            .query(`
+              SELECT u.UserID, u.Email, s.FirstName, s.LastName, s.Department, s.YearOfStudy,
+                                    s.DateOfBirth, s.ProfilePictureURL, s.LinkedInURL, s.GitHubURL
+                FROM Users u 
+                JOIN StudentProfiles s ON u.UserID = s.UserID 
+                WHERE u.UserID = @UserID`);
+
+        const studentProfile = studentResult.recordset?.[0] || null;
+        if (!studentProfile) {
+            return res.status(404).json({ success: false, message: 'Student profile not found' });
+        }
+
+        res.json(studentProfile);
     } catch (err) {
         res.status(500).send(err.message);
     }
 });
 
-// 4. PUT Profile
+// 4. PUT Profile (Updated to save LinkedIn/GitHub)
 router.put('/profile/:id', async (req, res) => {
-    // Expecting firstName and lastName from frontend
-    const { firstName, lastName, year, interests } = req.body; 
+    const {
+        role,
+        firstName,
+        lastName,
+        department,
+        year,
+        dateOfBirth,
+        profilePictureURL,
+        linkedInURL,
+        gitHubURL,
+        interests,
+        organizationName,
+        description,
+        contactEmail,
+    } = req.body;
+
+    const userId = Number(req.params.id);
+    if (!Number.isInteger(userId) || userId <= 0) {
+        return res.status(400).json({ success: false, message: 'Valid user id is required' });
+    }
+
     try {
         const pool = await poolPromise;
-        await pool.request()
-            .input('UserID', sql.Int, req.params.id)
-            .input('FirstName', sql.NVarChar, firstName)
-            .input('LastName', sql.NVarChar, lastName)
-            .input('Year', sql.Int, year)
-            .query(`
-                UPDATE StudentProfiles 
-                SET FirstName = @FirstName, LastName = @LastName, YearOfStudy = @Year 
-                WHERE UserID = @UserID;
-                DELETE FROM UserInterests WHERE UserID = @UserID;`);
-        
-        for (let interestId of interests) {
-            await pool.request()
-                .input('UserID', sql.Int, req.params.id)
-                .input('InterestID', sql.Int, interestId)
-                .query(`INSERT INTO UserInterests (UserID, InterestID) VALUES (@UserID, @InterestID)`);
+
+        const userResult = await pool.request()
+            .input('UserID', sql.Int, userId)
+            .query('SELECT UserID, Role FROM Users WHERE UserID = @UserID');
+
+        const user = userResult.recordset?.[0];
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
         }
-        res.json({ success: true });
+
+        const dbRole = String(user.Role || '').toLowerCase();
+        const requestedRole = String(role || '').toLowerCase();
+        const effectiveRole = requestedRole || dbRole;
+
+        if (effectiveRole === 'organizer' || dbRole === 'organizer') {
+            const normalizedOrgName = String(organizationName || '').trim() || null;
+            const normalizedDescription = description === undefined ? undefined : (String(description || '').trim() || null);
+            const normalizedContactEmail = String(contactEmail || '').trim() || null;
+            const normalizedProfilePicture = profilePictureURL || null;
+
+            const organizerUpdate = pool.request()
+                .input('UserID', sql.Int, userId)
+                .input('OrganizationName', sql.NVarChar(150), normalizedOrgName)
+                .input('Description', sql.NVarChar(sql.MAX), normalizedDescription)
+                .input('ContactEmail', sql.NVarChar(100), normalizedContactEmail)
+                .input('ProfilePictureURL', sql.NVarChar(sql.MAX), normalizedProfilePicture)
+                .query(`
+                    UPDATE OrganizerProfiles
+                    SET OrganizationName = COALESCE(@OrganizationName, OrganizationName),
+                        Description = COALESCE(@Description, Description),
+                        ContactEmail = COALESCE(@ContactEmail, ContactEmail),
+                        ProfilePictureURL = @ProfilePictureURL
+                    WHERE UserID = @UserID
+                `);
+
+            const result = await organizerUpdate;
+            if ((result.rowsAffected?.[0] || 0) === 0) {
+                return res.status(404).json({ success: false, message: 'Organizer profile not found' });
+            }
+
+            return res.json({ success: true, role: 'Organizer' });
+        }
+
+        const parsedDob = dateOfBirth ? new Date(dateOfBirth) : null;
+
+        if (dateOfBirth && Number.isNaN(parsedDob?.getTime())) {
+            return res.status(400).json({ success: false, message: 'dateOfBirth must be a valid date' });
+        }
+
+        await pool.request()
+            .input('UserID', sql.Int, userId)
+            .input('FirstName', sql.NVarChar(50), firstName || null)
+            .input('LastName', sql.NVarChar(50), lastName || null)
+            .input('Department', sql.NVarChar(100), department || null)
+            .input('Year', sql.Int, Number.isInteger(Number(year)) ? Number(year) : null)
+            .input('DateOfBirth', sql.Date, dateOfBirth ? parsedDob : null)
+            .input('ProfilePictureURL', sql.NVarChar(sql.MAX), profilePictureURL || null)
+            .input('LinkedIn', sql.NVarChar(255), linkedInURL || null)
+            .input('GitHub', sql.NVarChar(255), gitHubURL || null)
+            .query(`UPDATE StudentProfiles 
+                    SET FirstName = @FirstName, LastName = @LastName, 
+                        Department = @Department, YearOfStudy = COALESCE(@Year, YearOfStudy),
+                        DateOfBirth = @DateOfBirth, ProfilePictureURL = @ProfilePictureURL,
+                        LinkedInURL = @LinkedIn, GitHubURL = @GitHub
+                    WHERE UserID = @UserID`);
+        
+        // Interest deletion/insertion logic remains the same
+        if (Array.isArray(interests)) {
+            await pool.request().input('UserID', sql.Int, userId).query(`DELETE FROM UserInterests WHERE UserID = @UserID`);
+            for (const interestId of interests) {
+                await pool.request().input('UserID', sql.Int, userId).input('InterestID', sql.Int, interestId).query(`INSERT INTO UserInterests (UserID, InterestID) VALUES (@UserID, @InterestID)`);
+            }
+        }
+        res.json({ success: true, role: 'Student' });
     } catch (err) {
         res.status(500).send(err.message);
     }

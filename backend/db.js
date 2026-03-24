@@ -7,8 +7,7 @@ const dbConfig = {
     password: process.env.DB_PASSWORD,     // Added process.env.
     server: process.env.DB_SERVER,         // Added process.env.
     database: process.env.DB_DATABASE,     // Added process.env.
-    options: {
-        instanceName: 'SQLEXPRESS', 
+    options: { 
         encrypt: false, 
         trustServerCertificate: true 
     },
@@ -18,9 +17,16 @@ const dbConfig = {
 
 // Create a connection pool and export it
 const poolPromise = sql.connect(dbConfig)
-    .then(pool => {
+    .then(async (pool) => {
         if (pool.connected) {
             console.log('✅ Connected to SQL Server Successfully!');
+            try {
+                const info = await pool.request().query('SELECT DB_NAME() AS CurrentDatabase, @@SERVERNAME AS ServerName');
+                const row = info.recordset?.[0] || {};
+                console.log(`🧭 SQL Context -> Server: ${row.ServerName || dbConfig.server}, Database: ${row.CurrentDatabase || dbConfig.database}`);
+            } catch (metaErr) {
+                console.warn('⚠️ Connected, but could not read SQL context metadata.');
+            }
         }
         return pool;
     })

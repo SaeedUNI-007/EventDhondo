@@ -86,6 +86,25 @@ GO
 -- SPRINT #2: CORE OPERATIONS STORED PROCEDURES
 -- =========================================================================
 
+-- 0. Add a Single Notification
+IF OBJECT_ID(N'dbo.sp_AddNotification', N'P') IS NOT NULL
+    DROP PROCEDURE dbo.sp_AddNotification;
+GO
+
+CREATE PROCEDURE dbo.sp_AddNotification
+    @UserID INT,
+    @Title NVARCHAR(255),
+    @Message NVARCHAR(MAX),
+    @EventID INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    INSERT INTO [dbo].[Notifications] (UserID, Title, Message, RelatedEventID, Status)
+    VALUES (@UserID, @Title, @Message, @EventID, 'Pending');
+END;
+GO
+
 -- 1. Register for an Event (with Capacity Check)
 -- 1. Register for an Event (with Capacity Check & Concurrency Control)
 IF OBJECT_ID(N'dbo.sp_RegisterForEvent', N'P') IS NOT NULL
@@ -363,21 +382,27 @@ BEGIN
 END;
 GO
 
--- 6. Add a Single Notification
-IF OBJECT_ID(N'dbo.sp_AddNotification', N'P') IS NOT NULL
-    DROP PROCEDURE dbo.sp_AddNotification;
+USE [EventDhondo];
 GO
 
-CREATE PROCEDURE dbo.sp_AddNotification
+ALTER PROCEDURE dbo.sp_UpdateStudentProfile
     @UserID INT,
-    @Title NVARCHAR(255),
-    @Message NVARCHAR(MAX),
-    @EventID INT = NULL
+    @FirstName NVARCHAR(50),
+    @LastName NVARCHAR(50),
+    @Department NVARCHAR(100),
+    @YearOfStudy INT,
+    @LinkedInURL NVARCHAR(255),
+    @GitHubURL NVARCHAR(255)
 AS
 BEGIN
     SET NOCOUNT ON;
-
-    INSERT INTO [dbo].[Notifications] (UserID, Title, Message, RelatedEventID, Status)
-    VALUES (@UserID, @Title, @Message, @EventID, 'Pending');
+    UPDATE [dbo].[StudentProfiles]
+    SET FirstName = @FirstName,
+        LastName = @LastName,
+        Department = @Department,
+        YearOfStudy = @YearOfStudy,
+        LinkedInURL = @LinkedInURL,
+        GitHubURL = @GitHubURL
+    WHERE UserID = @UserID;
 END;
 GO

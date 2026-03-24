@@ -24,10 +24,12 @@ export default function Dashboard() {
   const [eventTypes, setEventTypes] = useState([]);
   const [selectedType, setSelectedType] = useState('');
   const [dateOrder, setDateOrder] = useState('asc');
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    const savedName = localStorage.getItem('displayName');
-    const savedEmail = localStorage.getItem('userEmail');
+    const userId = localStorage.getItem('userID') || localStorage.getItem('userId');
+    const savedName = userId ? (localStorage.getItem(`displayName:${userId}`) || localStorage.getItem('displayName')) : localStorage.getItem('displayName');
+    const savedEmail = userId ? (localStorage.getItem(`userEmail:${userId}`) || localStorage.getItem('userEmail')) : localStorage.getItem('userEmail');
     if (savedName) {
       setDisplayName(savedName);
     } else if (savedEmail) {
@@ -76,8 +78,13 @@ export default function Dashboard() {
   // apply filters + sorting
   const visibleEvents = events
     .filter((ev) => {
-      if (!selectedType) return true;
-      return String(ev.type || '').toLowerCase() === String(selectedType).toLowerCase();
+      const search = searchTerm.trim().toLowerCase();
+      const matchesSearch = !search || [ev.title, ev.organizer, ev.venue]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(search));
+
+      const matchesType = !selectedType || String(ev.type || '').toLowerCase() === String(selectedType).toLowerCase();
+      return matchesSearch && matchesType;
     })
     .sort((a, b) => {
       const da = a.date ? new Date(a.date) : null;
@@ -106,7 +113,14 @@ export default function Dashboard() {
 
   // left-side panel content (attached to left edge, wider, greenish background)
   const SidePanelContent = ({ compact = false }) => {
-    const profilePic = localStorage.getItem('profilePictureURL') || '';
+    const userId = typeof window !== 'undefined' ? (localStorage.getItem('userID') || localStorage.getItem('userId')) : '';
+    const profilePic = typeof window !== 'undefined'
+      ? (
+        userId
+          ? (localStorage.getItem(`profilePictureURL:${userId}`) || '')
+          : (localStorage.getItem('profilePictureURL') || '')
+      )
+      : '';
     return (
       <div className={`flex flex-col ${compact ? 'items-start p-3' : 'items-center py-8 px-6'} h-full`}>
         <div className="w-full flex items-center justify-between mb-6">
@@ -145,6 +159,15 @@ export default function Dashboard() {
             ))}
           </ul>
         </nav>
+
+        <div className={`w-full mt-6 border-t ${compact ? 'border-slate-200 pt-3' : 'border-white/25 pt-4'}`}>
+          <Link
+            href="/"
+            className={`${compact ? 'text-slate-700 hover:text-slate-900' : 'text-white/85 hover:text-white'} text-sm font-medium`}
+          >
+            Return to Home
+          </Link>
+        </div>
       </div>
     );
   };
@@ -152,40 +175,52 @@ export default function Dashboard() {
   return (
     <main className="min-h-screen px-0 py-8">
       <div className="shell">
-        <header className="glass reveal-up rounded-2xl p-5 md:p-7 mx-auto max-w-[1200px]">
+        <header className="glass reveal-up rounded-2xl p-5 md:p-7 mb-6 mx-auto max-w-[1200px] lg:ml-80">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <p className="text-sm font-semibold uppercase tracking-wide text-[var(--brand-strong)]">Dashboard</p>
               <h1 className="mt-1 text-3xl font-extrabold md:text-4xl">Welcome, {displayName}!</h1>
               <p className="mt-2 text-sm text-slate-600 md:text-base">Explore upcoming events tailored for your campus interests.</p>
             </div>
-            <a href="/" className="rounded-xl border border-[var(--stroke)] bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-[var(--surface-soft)]">Back to Home</a>
           </div>
         </header>
 
         {/* filter controls aligned left below welcome bar */}
-        <div className="mx-auto max-w-[1200px] md:ml-80 px-4 mb-4">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-slate-700">Event Type</label>
-              <select value={selectedType} onChange={(e) => setSelectedType(e.target.value)} className="rounded-md border px-3 py-1">
-                <option value="">All types</option>
-                {eventTypes.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
+        <div className="mx-auto max-w-[1200px] lg:ml-80 px-4 mb-4">
+          <div className="glass rounded-2xl p-4 md:p-5">
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-slate-700">Search</label>
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search title, organizer, venue"
+                  className="rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm"
+                />
+              </div>
 
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-slate-700">Date</label>
-              <select value={dateOrder} onChange={(e) => setDateOrder(e.target.value)} className="rounded-md border px-3 py-1">
-                <option value="asc">Ascending</option>
-                <option value="desc">Descending</option>
-              </select>
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-slate-700">Event Type</label>
+                <select value={selectedType} onChange={(e) => setSelectedType(e.target.value)} className="rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm">
+                  <option value="">All types</option>
+                  {eventTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-slate-700">Date</label>
+                <select value={dateOrder} onChange={(e) => setDateOrder(e.target.value)} className="rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm">
+                  <option value="asc">Ascending</option>
+                  <option value="desc">Descending</option>
+                </select>
+              </div>
             </div>
           </div>
         </div>
 
         {/* Permanent left column attached to page edge for md+ (wider, greenish background) */}
-        <div className="hidden md:block">
+        <div className="hidden lg:block">
           <aside className="fixed left-0 top-0 h-screen w-80 bg-[linear-gradient(180deg,#0f766e,#34d399)] border-r border-[var(--stroke)] z-10">
             <div className="sticky top-6 h-[calc(100vh-48px)] overflow-hidden">
               <SidePanelContent />
@@ -194,9 +229,9 @@ export default function Dashboard() {
         </div>
 
         {/* Main content container shifted right on md+ to make room for fixed left column (80 = 20rem) */}
-        <div className="mx-auto max-w-[1200px] md:ml-80 px-4">
+        <div className="mx-auto max-w-[1200px] lg:ml-80 px-4">
           {/* Mobile inline panel */}
-          <div className="md:hidden mb-6">
+          <div className="lg:hidden mb-6">
             <div className="rounded-2xl bg-[var(--surface-soft)] p-4">
               <SidePanelContent compact />
             </div>

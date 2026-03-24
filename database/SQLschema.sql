@@ -63,7 +63,8 @@ CREATE TABLE [StudentProfiles] (
     [LastName] NVARCHAR(50) NOT NULL,
     [Department] NVARCHAR(100),
     [YearOfStudy] INT,
-    [ProfilePictureURL] NVARCHAR(255),
+    [DateOfBirth] DATE,
+    [ProfilePictureURL] NVARCHAR(MAX),
     FOREIGN KEY ([UserID]) REFERENCES [Users]([UserID]) ON DELETE CASCADE
 );
 
@@ -73,6 +74,7 @@ CREATE TABLE [OrganizerProfiles] (
     [OrganizationName] NVARCHAR(150) NOT NULL UNIQUE,
     [Description] NVARCHAR(MAX),
     [ContactEmail] NVARCHAR(100) NOT NULL,
+    [ProfilePictureURL] NVARCHAR(MAX),
     [VerificationStatus] NVARCHAR(10) NOT NULL DEFAULT 'Pending' CHECK ([VerificationStatus] IN ('Pending', 'Verified', 'Rejected')),
     FOREIGN KEY ([UserID]) REFERENCES [Users]([UserID]) ON DELETE CASCADE
 );
@@ -314,6 +316,57 @@ CREATE TABLE [ReviewResponses] (
     FOREIGN KEY ([ReviewID]) REFERENCES [EventReviews]([ReviewID]) ON DELETE CASCADE,
     FOREIGN KEY ([OrganizerID]) REFERENCES [Users]([UserID]) ON DELETE NO ACTION
 );
+
+USE [EventDhondo];
+GO
+
+-- Add profile columns if they do not exist (safe for reruns)
+IF COL_LENGTH('dbo.StudentProfiles', 'DateOfBirth') IS NULL
+BEGIN
+    ALTER TABLE [StudentProfiles] ADD [DateOfBirth] DATE NULL;
+END
+GO
+
+IF COL_LENGTH('dbo.StudentProfiles', 'LinkedInURL') IS NULL
+BEGIN
+    ALTER TABLE [StudentProfiles] ADD [LinkedInURL] NVARCHAR(255) NULL;
+END
+GO
+
+IF COL_LENGTH('dbo.StudentProfiles', 'GitHubURL') IS NULL
+BEGIN
+    ALTER TABLE [StudentProfiles] ADD [GitHubURL] NVARCHAR(255) NULL;
+END
+GO
+
+-- Widen profile picture columns for base64 data URLs
+IF EXISTS (
+    SELECT 1
+    FROM sys.columns c
+    JOIN sys.types t ON c.user_type_id = t.user_type_id
+    WHERE c.object_id = OBJECT_ID('dbo.StudentProfiles')
+      AND c.name = 'ProfilePictureURL'
+      AND t.name = 'nvarchar'
+      AND c.max_length <> -1
+)
+BEGIN
+    ALTER TABLE [StudentProfiles] ALTER COLUMN [ProfilePictureURL] NVARCHAR(MAX) NULL;
+END
+GO
+
+IF EXISTS (
+    SELECT 1
+    FROM sys.columns c
+    JOIN sys.types t ON c.user_type_id = t.user_type_id
+    WHERE c.object_id = OBJECT_ID('dbo.OrganizerProfiles')
+      AND c.name = 'ProfilePictureURL'
+      AND t.name = 'nvarchar'
+      AND c.max_length <> -1
+)
+BEGIN
+    ALTER TABLE [OrganizerProfiles] ALTER COLUMN [ProfilePictureURL] NVARCHAR(MAX) NULL;
+END
+GO
 
 
 -- ========= 6. INDEXING FOR PERFORMANCE =========

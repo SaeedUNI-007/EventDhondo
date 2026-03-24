@@ -49,6 +49,8 @@ export default function Home() {
               <Link href={previewHref} className="rounded-xl border border-[var(--stroke)] bg-white px-5 py-3 font-semibold text-slate-700 hover:bg-[var(--surface-soft)]">
                 {previewLabel}
               </Link>
+
+              {/* Homepage kept minimal — dashboard links are in each dashboard's sidebar */}
             </div>
           </div>
 

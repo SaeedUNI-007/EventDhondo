@@ -1,126 +1,83 @@
 "use client";
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useEffect, useState, useMemo } from 'react';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
-
-// default event types (used for filter)
-const DEFAULT_EVENT_TYPES = [
-  "Competition",
-  "Workshop",
-  "Seminar",
-  "Cultural",
-  "Sports"
-];
-
-export default function Dashboard() {
+export default function DashboardStudent() {
+  const [userRole, setUserRole] = useState('');
   const [events, setEvents] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [displayName, setDisplayName] = useState('Student');
+  const [displayName, setDisplayName] = useState('');
   const [userEmail, setUserEmail] = useState('');
-
-  // filter state
+  const [viewMode, setViewMode] = useState('available'); // 'available' | 'yours'
+  // filter state (like organizer dashboard)
   const [eventTypes, setEventTypes] = useState([]);
-  const [selectedType, setSelectedType] = useState('');
-  const [dateOrder, setDateOrder] = useState('asc');
+  const [selectedType, setSelectedType] = useState('all');
+  const [dateOrder, setDateOrder] = useState('asc'); // 'asc' | 'desc'
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    const userId = localStorage.getItem('userID') || localStorage.getItem('userId');
-    const savedName = userId ? (localStorage.getItem(`displayName:${userId}`) || localStorage.getItem('displayName')) : localStorage.getItem('displayName');
-    const savedEmail = userId ? (localStorage.getItem(`userEmail:${userId}`) || localStorage.getItem('userEmail')) : localStorage.getItem('userEmail');
-    if (savedName) {
-      setDisplayName(savedName);
-    } else if (savedEmail) {
-      const fromEmail = savedEmail.split('@')[0].replace(/[._-]+/g, ' ');
-      const titleCase = fromEmail.replace(/\b\w/g, (c) => c.toUpperCase());
-      setDisplayName(titleCase || 'Student');
+    if (typeof window !== 'undefined') {
+      setUserRole((localStorage.getItem('userRole') || '').toLowerCase());
+      setEvents(JSON.parse(localStorage.getItem('events') || '[]'));
+      const id = localStorage.getItem('userId') || localStorage.getItem('userID');
+      const name = id ? (localStorage.getItem(`displayName:${id}`) || localStorage.getItem('displayName')) : localStorage.getItem('displayName');
+      const email = id ? (localStorage.getItem(`userEmail:${id}`) || localStorage.getItem('userEmail')) : localStorage.getItem('userEmail');
+      if (name) setDisplayName(name);
+      if (email) setUserEmail(email);
+      // derive event types list from events
+      const evs = JSON.parse(localStorage.getItem('events') || '[]');
+      const types = Array.from(new Set(evs.map(e => (e.eventType || e.EventType || 'Other')).filter(Boolean)));
+      setEventTypes(types);
     }
-    if (savedEmail) setUserEmail(savedEmail);
-
-    const fetchEvents = async () => {
-      try {
-        setLoading(true);
-        setError('');
-        const response = await fetch(`${API_BASE_URL}/api/events`);
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.message || 'Failed to load events');
-        }
-
-        const normalized = Array.isArray(data)
-          ? data.map((item) => ({
-              id: item.EventID,
-              title: item.Title,
-              organizer: item.Organizer,
-              date: item.EventDate || item.date,
-              venue: item.Venue,
-              type: item.EventType || item.EventCategory || ''
-            }))
-          : [];
-
-        setEvents(normalized);
-      } catch (err) {
-        setError(err.message || 'Server connection failed');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    // set event types for filter UI (can be replaced by backend list later)
-    setEventTypes(DEFAULT_EVENT_TYPES);
-
-    fetchEvents();
   }, []);
 
-  // apply filters + sorting
-  const visibleEvents = events
-    .filter((ev) => {
-      const search = searchTerm.trim().toLowerCase();
-      const matchesSearch = !search || [ev.title, ev.organizer, ev.venue]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(search));
-
-      const matchesType = !selectedType || String(ev.type || '').toLowerCase() === String(selectedType).toLowerCase();
-      return matchesSearch && matchesType;
-    })
-    .sort((a, b) => {
-      const da = a.date ? new Date(a.date) : null;
-      const db = b.date ? new Date(b.date) : null;
-      if (!da || !db) return 0;
-      return dateOrder === 'asc' ? da - db : db - da;
-    });
-
-  const EventCard = ({ event }) => (
-    <article className="surface-card reveal-up overflow-hidden p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <p className="rounded-full bg-[var(--surface-soft)] px-3 py-1 text-xs font-bold text-[var(--brand-strong)]">{event.type || event.category || 'Campus Event'}</p>
-        <p className="text-xs font-semibold text-slate-500">{event.date ? new Date(event.date).toLocaleDateString() : ''}</p>
-      </div>
-      <h3 className="text-lg font-bold text-slate-900">{event.title}</h3>
-      <p className="mt-1 text-sm text-slate-600">{event.organizer}</p>
-      <p className="mt-2 text-sm text-slate-600">{event.venue}</p>
-      <button className="cta mt-4 w-full py-2 text-sm font-semibold">View Details</button>
-    </article>
-  );
-
-  // only Dashboard nav item visible under profile as requested
   const NAV_ITEMS = [
-    { label: 'Dashboard', href: '/dashboard' }
-  ];
+    { label: 'Dashboard', href: '/dashboard' },
+    { label: 'Achievements', href: '/achievementsU' },
+    { label: 'Add Event', href: '/event' },
+    { label: 'Remove Event', href: '/removeEvent' },
+    { label: 'Requests', href: '/requestsU' },
+     ];
 
-  // left-side panel content (attached to left edge, wider, greenish background)
+  const userId = typeof window !== 'undefined' ? (localStorage.getItem('userId') || localStorage.getItem('userID')) : null;
+
+  function isOwner(ev) {
+    const oid = (ev.organizerId ?? ev.organizer ?? ev.createdBy ?? ev.creatorId ?? ev.userId);
+    return String(oid || '') === String(userId || '');
+  }
+
+  // base set according to view mode
+  const baseEvents = useMemo(() => {
+    return events.filter(ev => {
+      if (viewMode === 'yours') return isOwner(ev);
+      const status = (ev.status || ev.Status || '').toString().toLowerCase();
+      const published = status === 'published' || status === '';
+      return published && !isOwner(ev);
+    });
+  }, [events, viewMode, userId]);
+
+  // apply filters: type, search, date ordering
+  const displayedEvents = useMemo(() => {
+    let list = baseEvents.slice();
+    if (selectedType && selectedType !== 'all') {
+      list = list.filter(ev => ((ev.eventType || ev.EventType || '').toString().toLowerCase()) === selectedType.toString().toLowerCase());
+    }
+    if (searchTerm && searchTerm.trim()) {
+      const q = searchTerm.trim().toLowerCase();
+      list = list.filter(ev => ((ev.title || ev.Title || '') + ' ' + (ev.description || ev.Description || '')).toLowerCase().includes(q));
+    }
+    list.sort((a,b) => {
+      const ad = new Date(a.eventDate || a.EventDate || 0).getTime();
+      const bd = new Date(b.eventDate || b.EventDate || 0).getTime();
+      return dateOrder === 'asc' ? ad - bd : bd - ad;
+    });
+    return list;
+  }, [baseEvents, selectedType, searchTerm, dateOrder]);
+
   const SidePanelContent = ({ compact = false }) => {
-    const userId = typeof window !== 'undefined' ? (localStorage.getItem('userID') || localStorage.getItem('userId')) : '';
     const profilePic = typeof window !== 'undefined'
-      ? (
-        userId
-          ? (localStorage.getItem(`profilePictureURL:${userId}`) || '')
-          : (localStorage.getItem('profilePictureURL') || '')
-      )
+      ? (userId ? (localStorage.getItem(`profilePictureURL:${userId}`) || '') : (localStorage.getItem('profilePictureURL') || ''))
       : '';
+
     return (
       <div className={`flex flex-col ${compact ? 'items-start p-3' : 'items-center py-8 px-6'} h-full`}>
         <div className="w-full flex items-center justify-between mb-6">
@@ -130,17 +87,17 @@ export default function Dashboard() {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={profilePic} alt="Profile" className="h-full w-full object-cover" />
               ) : (
-                <span className="text-xl text-white">{displayName.charAt(0)}</span>
+                <span className="text-xl text-white">{(displayName || 'Student').charAt(0)}</span>
               )}
             </div>
             <div className={`${compact ? 'hidden' : 'text-left'}`}>
-              <h3 className="text-base font-semibold text-white leading-tight">{displayName}</h3>
+              <h3 className="text-base font-semibold text-white leading-tight">{displayName || 'Student'}</h3>
               {userEmail && <p className="text-xs text-white/80">{userEmail}</p>}
             </div>
           </div>
 
-          {/* small edit icon that links to profile page (keeps top edit control) */}
-          <Link href="/profile" className="inline-flex items-center justify-center rounded p-1.5 bg-white/90 hover:bg-white border border-[var(--stroke)]">
+          {/* pencil icon links to profile */}
+          <Link href="/profile" className="inline-flex items-center justify-center rounded p-1.5 bg-white/90 hover:bg-white border border-[var(--stroke)]" aria-label="Edit profile">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[var(--brand-strong)]" viewBox="0 0 20 20" fill="currentColor">
               <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" />
               <path fillRule="evenodd" d="M2 15.25V18h2.75l8.482-8.482-2.75-2.75L2 15.25z" clipRule="evenodd" />
@@ -161,10 +118,7 @@ export default function Dashboard() {
         </nav>
 
         <div className={`w-full mt-6 border-t ${compact ? 'border-slate-200 pt-3' : 'border-white/25 pt-4'}`}>
-          <Link
-            href="/"
-            className={`${compact ? 'text-slate-700 hover:text-slate-900' : 'text-white/85 hover:text-white'} text-sm font-medium`}
-          >
+          <Link href="/" className={`${compact ? 'text-slate-700 hover:text-slate-900' : 'text-white/85 hover:text-white'} text-sm font-medium`}>
             Return to Home
           </Link>
         </div>
@@ -174,52 +128,88 @@ export default function Dashboard() {
 
   return (
     <main className="min-h-screen px-0 py-8">
-      <div className="shell">
-        <header className="glass reveal-up rounded-2xl p-5 md:p-7 mb-6 mx-auto max-w-[1200px] lg:ml-80">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-wide text-[var(--brand-strong)]">Dashboard</p>
-              <h1 className="mt-1 text-3xl font-extrabold md:text-4xl">Welcome, {displayName}!</h1>
-              <p className="mt-2 text-sm text-slate-600 md:text-base">Explore upcoming events tailored for your campus interests.</p>
+      <div className="shell mx-auto max-w-[1200px]">
+        <header className="glass reveal-up rounded-2xl p-5 md:p-7 mb-4 lg:ml-80">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold uppercase tracking-wide text-[var(--brand-strong)]">Student Dashboard</p>
+              <h1 className="mt-1 text-2xl font-extrabold md:text-4xl break-words">Welcome{displayName ? `, ${displayName}` : ''}!</h1>
+              {userEmail && <p className="mt-2 text-sm text-slate-600">Signed in as {userEmail}</p>}
+            </div>
+
+            <div className="flex flex-col gap-3 md:items-end">
+              {userRole === 'student' && (
+                <Link href="/event" className="inline-flex items-center rounded-md bg-[var(--brand)] text-white px-4 py-2 font-semibold">
+                  + Add Event
+                </Link>
+              )}
+            </div>
+          </div>
+
+          {/* Toggle between Available / Your Events */}
+          <div className="mt-4">
+            <div className="inline-flex rounded-xl bg-[var(--surface-soft)] p-1">
+              <button type="button" onClick={() => setViewMode('available')} className={`px-4 py-2 rounded-lg text-sm font-semibold ${viewMode === 'available' ? 'bg-white text-[var(--brand-strong)]' : 'text-slate-600'}`}>
+                Available Events
+              </button>
+              <button type="button" onClick={() => setViewMode('yours')} className={`px-4 py-2 rounded-lg text-sm font-semibold ${viewMode === 'yours' ? 'bg-white text-[var(--brand-strong)]' : 'text-slate-600'}`}>
+                Your Events
+              </button>
             </div>
           </div>
         </header>
 
-        {/* filter controls aligned left below welcome bar */}
         <div className="mx-auto max-w-[1200px] lg:ml-80 px-4 mb-4">
           <div className="glass rounded-2xl p-4 md:p-5">
-            <div className="grid gap-3 md:grid-cols-3">
-              <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium text-slate-700">Search</label>
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Search title, organizer, venue"
-                  className="rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm"
-                />
-              </div>
+            {/* Filter card centered — matches organizer layout, left helper line removed */}
+            <div className="flex justify-center">
+              <div className="w-full max-w-[980px]">
+                <div className="rounded-lg bg-white p-3 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-semibold">Filter events</span>
 
-              <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium text-slate-700">Event Type</label>
-                <select value={selectedType} onChange={(e) => setSelectedType(e.target.value)} className="rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm">
-                  <option value="">All types</option>
-                  {eventTypes.map((t) => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
+                    <select
+                      value={selectedType}
+                      onChange={e => setSelectedType(e.target.value)}
+                      className="p-2 rounded border bg-white text-sm"
+                    >
+                      <option value="all">All types</option>
+                      {['Competition','Workshop','Seminar','Cultural','Sports']
+                        .concat(eventTypes.filter(t => !['Competition','Workshop','Seminar','Cultural','Sports'].includes(t)))
+                        .map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
 
-              <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium text-slate-700">Date</label>
-                <select value={dateOrder} onChange={(e) => setDateOrder(e.target.value)} className="rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm">
-                  <option value="asc">Ascending</option>
-                  <option value="desc">Descending</option>
-                </select>
+                    <select
+                      value={dateOrder}
+                      onChange={e => setDateOrder(e.target.value)}
+                      className="p-2 rounded border bg-white text-sm"
+                    >
+                      <option value="asc">Date: Oldest first</option>
+                      <option value="desc">Date: Newest first</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <input
+                      placeholder="Search title or description"
+                      value={searchTerm}
+                      onChange={e => setSearchTerm(e.target.value)}
+                      className="p-2 rounded border text-sm w-56"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedType('all'); setDateOrder('asc'); setSearchTerm(''); }}
+                      className="px-3 py-2 rounded border text-sm text-slate-700 hover:bg-[var(--surface-soft)]"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Permanent left column attached to page edge for md+ (wider, greenish background) */}
         <div className="hidden lg:block">
           <aside className="fixed left-0 top-0 h-screen w-80 bg-[linear-gradient(180deg,#0f766e,#34d399)] border-r border-[var(--stroke)] z-10">
             <div className="sticky top-6 h-[calc(100vh-48px)] overflow-hidden">
@@ -228,9 +218,7 @@ export default function Dashboard() {
           </aside>
         </div>
 
-        {/* Main content container shifted right on md+ to make room for fixed left column (80 = 20rem) */}
         <div className="mx-auto max-w-[1200px] lg:ml-80 px-4">
-          {/* Mobile inline panel */}
           <div className="lg:hidden mb-6">
             <div className="rounded-2xl bg-[var(--surface-soft)] p-4">
               <SidePanelContent compact />
@@ -239,19 +227,48 @@ export default function Dashboard() {
 
           <section className="pt-4">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-2xl font-bold">Recommended for You</h2>
-              <span className="text-sm text-slate-500">{visibleEvents.length} events</span>
+              <h2 className="text-2xl font-bold">{viewMode === 'available' ? 'Available Events' : 'Your Events'}</h2>
+              <span className="text-sm text-slate-500">{displayedEvents.length} events</span>
             </div>
 
-            {loading && <p className="text-slate-600">Loading events...</p>}
-            {error && <p className="rounded-lg bg-rose-50 p-3 text-[var(--danger)]">{error}</p>}
-            {!loading && !error && visibleEvents.length === 0 && (
-              <p className="rounded-lg bg-[var(--surface-soft)] p-3 text-slate-600">No upcoming events found. Ensure your SQL view returns future published events.</p>
+            {displayedEvents.length === 0 && (
+              <p className="rounded-lg bg-[var(--surface-soft)] p-3 text-slate-600">
+                {viewMode === 'available'
+                  ? 'No published events found. Check back later or switch to "Your Events" to manage your created events.'
+                  : 'You have not created any events yet. Use "+ Add Event" to create one.'}
+              </p>
             )}
 
             <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {visibleEvents.map((ev) => (
-                <EventCard key={ev.id} event={ev} />
+              {displayedEvents.map(ev => (
+                <article key={ev.id} className="surface-card reveal-up overflow-hidden p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="rounded-full bg-[var(--surface-soft)] px-3 py-1 text-xs font-bold text-[var(--brand-strong)]">{ev.eventType || ev.EventType || "Event"}</p>
+                    <p className="text-xs font-semibold text-slate-500">{ev.eventDate || ev.eventDate || ""}</p>
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-900">{ev.title || ev.Title}</h3>
+                  <p className="mt-1 text-sm text-slate-600">{(ev.description || ev.Description || "").slice(0, 140)}</p>
+                  <p className="mt-2 text-sm text-slate-600">{ev.venue || ev.Venue || 'TBA'}</p>
+
+                  <div className="mt-4 flex gap-2">
+                    {viewMode === 'available' ? (
+                      <>
+                        <Link href={`/viewEvent?eventId=${ev.id}`} className="cta px-3 py-2 text-sm font-semibold">Register</Link>
+                        <Link href={`/event/view/${ev.id}`} className="rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm font-semibold hover:bg-[var(--surface-soft)]">Details</Link>
+                      </>
+                    ) : (
+                      <>
+                        <Link href={`/event/edit/${ev.id}`} className="px-3 py-2 text-sm text-slate-700 rounded-md border hover:bg-[var(--surface-soft)]">Edit</Link>
+                        <button onClick={() => {
+                          // simple local-delete for own events (remove from localStorage)
+                          const all = JSON.parse(localStorage.getItem('events') || '[]').filter(x => String(x.id) !== String(ev.id));
+                          localStorage.setItem('events', JSON.stringify(all));
+                          setEvents(all);
+                        }} className="px-3 py-2 text-sm text-white bg-red-600 rounded-md">Delete</button>
+                      </>
+                    )}
+                  </div>
+                </article>
               ))}
             </div>
           </section>

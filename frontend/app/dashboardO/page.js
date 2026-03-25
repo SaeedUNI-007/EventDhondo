@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
-import Link from "next/link";
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -124,7 +124,12 @@ export default function DashboardO() {
     });
 
   // Side panel now only contains "Dashboard" (profile accessible via pencil icon)
-  const NAV_ITEMS = [{ label: "Dashboard", href: "/dashboardO" }];
+  const NAV_ITEMS = [
+    { label: 'Dashboard', href: '/dashboardO' },
+    { label: 'Add Event', href: '/eventO' },
+    { label: 'Remove Event', href: '/removeEventO' },
+    { label: 'Requests', href: '/requestsO' },
+  ];
 
   const SidePanelContent = ({ compact = false }) => {
     const profilePic = typeof window !== "undefined"
@@ -194,28 +199,6 @@ export default function DashboardO() {
             <p className="text-sm font-semibold uppercase tracking-wide text-[var(--brand-strong)]">Organization Dashboard</p>
             <h1 className="mt-1 text-2xl font-extrabold md:text-4xl break-words">Welcome, {orgName}!</h1>
             {userEmail && <p className="mt-2 text-sm text-slate-600">Signed in as {userEmail}</p>}
-          </div>
-
-          <div className="flex flex-col gap-2 md:items-end">
-            <div className="flex flex-wrap items-center gap-2">
-              <Link href="/events/new" className="cta inline-flex items-center px-4 py-2 font-semibold">+ Add Event</Link>
-            </div>
-            <div className="inline-flex items-center gap-2 bg-white rounded-md p-2 border border-[var(--stroke)] w-full md:w-auto">
-              <select
-                value={removeCandidate}
-                onChange={(e) => setRemoveCandidate(e.target.value)}
-                className="bg-white px-2 py-1 rounded-md text-sm border border-transparent min-w-0 w-full md:w-56"
-                aria-label="Select event to remove"
-              >
-                <option value="">Select event</option>
-                {events.map((ev) => (
-                  <option key={ev.EventID || ev.id || ""} value={ev.EventID || ev.id || ""}>
-                    {ev.Title || ev.title || `Event ${ev.EventID || ev.id || ""}`}
-                  </option>
-                ))}
-              </select>
-              <button onClick={handleRemoveEvent} className="rounded-md bg-rose-600 text-white px-3 py-1 text-sm font-semibold">Remove Event</button>
-            </div>
           </div>
           </div>
         </header>

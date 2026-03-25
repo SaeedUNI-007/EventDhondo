@@ -1,22 +1,23 @@
 # EventDhondo Project Progress Report
 
-Last verified: 2026-03-21
+Last verified: 2026-03-26
 
 ## 1. Executive Summary
-EventDhondo is a campus event discovery and management platform with a monorepo structure:
+EventDhondo is a campus event discovery and management platform with this monorepo structure:
 - backend: Express API + SQL Server access
 - frontend: Next.js app (App Router)
 - database: SQL schema, procedures, views, seed data
 
-Current maturity (estimated from codebase state):
+Current maturity (estimated):
 - Core platform foundation: complete
 - Student/organizer authentication and role routing: complete
-- Event discovery dashboards: mostly complete
-- Profile management: partially complete (works for student path, organizer update path has backend mismatch)
-- Team and registration backend logic: implemented, but limited/no UI coverage
-- Production hardening (security, tests, CI/CD): not complete
+- Event discovery and registration lifecycle: mostly complete
+- Organizer event management (create/delete/view): complete for main flow
+- Profile management (student + organizer): complete for main flow
+- Admin dashboard backend coverage: partially complete
+- Production hardening (security, tests, CI/CD): pending
 
-Overall: project appears around 65-75% feature-complete for an academic milestone/demo and not yet production-ready.
+Overall: project appears around 80-85% feature-complete for demo use, with remaining work focused on admin APIs and production hardening.
 
 ## 2. Architecture Snapshot
 
@@ -36,203 +37,114 @@ Main route mounting:
 - Framework: Next.js 16 + React 19
 - Routing: App Router (frontend/app/*)
 - Styling: Tailwind CSS v4 + custom CSS variables/theme classes
-- State/data: localStorage + fetch calls to backend API
+- State/data: sessionStorage-first auth + localStorage fallback/cache
 
 ### Database
 - Engine: Microsoft SQL Server
 - Setup model: SQL-first scripts (schema/procedures/views/data)
-- Domain model: users, roles, events, registrations, waitlists, attendance, teams, portfolio, notifications, reviews
+- Domain model: users, roles, events, registrations, waitlists, attendance, teams, notifications, reviews, achievements
 
-## 3. What Has Been Implemented
+## 3. Major Progress Completed This Sprint
 
-### 3.1 Authentication and Role Handling
-Implemented:
-- Registration endpoint for student and organizer payloads
-- Login endpoint with role return and userId
-- Bcrypt password hashing for new registrations
-- Legacy plaintext compatibility fallback during login for older records
-- University email restriction to @fast.edu.pk
+### 3.1 Dependency and Runtime Fixes
+- Fixed frontend module resolution issue for charts (Chart.js/react-chartjs-2 stack).
+- Updated lockfile and dependency state to match imports.
+- Stabilized backend env loading by resolving .env from backend directory path.
 
-Frontend behavior implemented:
-- Login persists userID/userId/userRole/userEmail/displayName in localStorage
-- Role-based redirect:
-  - student -> /dashboard
-  - organizer -> /dashboardO
-- Registration supports both student and organizer forms
+### 3.2 Backend API Enhancements Completed
+Implemented in backend/data.js:
+- POST /api/events
+  - organizer event creation
+  - date/time normalization and validation
+  - registration deadline validation against event date
+  - organizer profile existence pre-check
+- POST /api/events/register
+  - improved success/error handling and waitlist message handling
+- POST /api/events/unregister
+  - integrated with existing SQL procedure sp_UnregisterFromEvent
+- GET /api/events/registrations/:userId
+  - returns student registration list with event details
+- DELETE /api/events/:id
+  - hard-delete if safe; archive-to-cancelled fallback on FK conflicts
 
-### 3.2 Event Discovery and Event Operations
-Implemented backend event functionality:
-- GET /api/events with filtering behavior:
-  - student mode: reads from vw_UpcomingEvents (published, future events)
-  - organizer mode: raw events by organizerId including non-cancelled records
+Existing core endpoints retained and in use:
+- GET /api/events
 - GET /api/interests
-- POST /api/events/register (stored procedure based)
-- POST /api/events/check-in (QR code attendance marking)
-- DELETE /api/events/:id (hard delete with organizer scoping when provided, archive fallback via status=Cancelled on FK conflict)
+- GET/PUT /api/profile/:id
 - GET /api/notifications/:userId
+- PUT /api/admin/verify-organizer/:id
 
-Implemented frontend event functionality:
-- Student dashboard lists/fetches events and supports client-side search/filter/sort
-- Organizer dashboard fetches organizer events and supports remove-event action
-- Dashboard UI/UX and responsive layout are implemented
+### 3.3 Frontend-Backend Integration Completed
+Connected key pages to real backend APIs:
+- Student/organizer dashboards now fetch from API events
+- Organizer event creation page now saves to backend instead of local-only storage
+- Register event page now calls backend register endpoint
+- View event page now supports unregister via backend
+- Organizer remove/view pages use backend delete/fetch flows
+- Profile pages (student + organizer) fetch and save via backend profile APIs
+- Admin verification page wired to backend verify endpoint and profile/user data fetching
 
-### 3.3 Profile Management
-Backend profile endpoints exist in data.js:
-- GET /api/profile/:id
-- PUT /api/profile/:id
+### 3.4 Session Isolation (Multi-Account Tabs) Completed
+Rolled out sessionStorage-first auth identity handling across app pages:
+- Login now stores active session in sessionStorage
+- App pages read userId/userRole/email/displayName from sessionStorage first
+- localStorage kept as compatibility fallback and scoped profile cache
 
-Student profile support appears implemented end-to-end:
-- frontend /profile fetches and updates student data
-- backend PUT updates StudentProfiles including LinkedInURL/GitHubURL
+Result:
+- Different browser tabs can remain logged into different accounts (tab-scoped sessions).
 
-Organizer profile is partially integrated:
-- frontend /profileO submits organizer payload
-- backend PUT /api/profile/:id currently updates StudentProfiles fields, not OrganizerProfiles fields
-- this creates a role mismatch for organizer profile save
+### 3.5 UI/Behavior Fixes Completed
+- Corrected event date/time display formatting (removed raw ISO artifacts in key views).
+- Removed seat-count requirement from student registration UI (single-seat flow).
+- Added unregister action in event detail flow.
+- Corrected requests tab behavior to show event requests rather than registration notifications.
 
-### 3.4 Team Features
-Implemented backend:
-- POST /api/teams/create -> calls sp_CreateTeam
-- POST /api/teams/invite -> calls sp_InviteTeamMember
+## 4. Current Feature Status
 
-Team UI flow in frontend:
-- not implemented as dedicated pages/forms yet
-
-### 3.5 Database Model and SQL Assets
-Implemented SQL assets:
-- SQLschema.sql: complete schema creation script with constraints and post-schema alterations
-- procedures.sql: operational procedures for register/update/profile/register-for-event/unregister/team/invite/cancel-event
-- views.sql: vw_UpcomingEvents
-- SQLdata.sql: sample seed data across major tables
-- SQLQueries.sql: reference query set (documentation/utility style)
-
-Notable schema coverage:
-- Users + role-specific profile tables
-- Interests and UserInterests
-- Events + categories/tags mappings
-- Registrations + waitlist + attendance
-- Teams + team members
-- Skills + achievements + certificates
-- Notifications + preferences
-- Reviews + organizer responses
-
-### 3.6 Migration Utilities
-Backend scripts implemented:
-- migrate-passwords.js
-  - dry-run default
-  - --apply mode to hash non-bcrypt passwords
-- migrate-profile-picture-column.js
-  - ensures ProfilePictureURL columns are NVARCHAR(MAX)
-
-## 4. Frontend Page Status
-
-Implemented pages:
-- / (landing page)
-- /login
-- /register
-- /dashboard (student)
-- /dashboardO (organizer)
-- /profile (student)
-- /profileO (organizer)
-
-Referenced but missing pages:
-- /events/new (linked from organizer dashboard, route not present)
-- /events/[id] and /events/edit/[id] style links are used in organizer cards, but no matching routes currently exist in frontend/app/events
-
-## 5. End-to-End Flows That Work Today
-
-Likely working now:
+### 4.1 Working End-to-End Flows
 1. Register student/organizer account
-2. Login
-3. Redirect to role-specific dashboard
-4. Fetch and view events
-5. Student profile fetch/update (basic)
-6. Organizer dashboard event deletion request
+2. Login and role-based dashboard redirect
+3. Discover events (student)
+4. Create event (organizer)
+5. Delete/archive event (organizer)
+6. Register/unregister for event (student)
+7. Student and organizer profile fetch/update
+8. Admin organizer approval (verify)
+9. Notifications fetch
 
-Partially working / likely broken paths:
-1. Organizer profile save (frontend payload vs backend student-only update logic)
-2. Add Event flow from organizer dashboard (missing /events/new page)
-3. Event detail/edit links from organizer dashboard (missing routes)
-4. Event registration from student UI (backend exists, student dashboard currently only has View Details button with no register action)
+### 4.2 Backend Features Implemented But Lightly Exposed in UI
+- Team management APIs:
+  - POST /api/teams/create
+  - POST /api/teams/invite
+- QR check-in:
+  - POST /api/events/check-in
 
-## 6. Security and Quality Status
+## 5. Remaining Work (Accurate as of 2026-03-26)
 
-Implemented safeguards:
-- bcrypt hashing for new users
-- domain-restricted auth email checks
-- DB-backed constraints and checks
-- request payload size limit and friendly 413 response
+### 5.1 Missing Admin API Coverage
+1. GET /api/admin/stats (used by admin overview)
+2. GET /api/admin/recent-activity (used by admin overview)
+3. GET /api/admin/requests (used by admin requests page)
+4. PUT /api/admin/cancel-event (admin event cancel action)
+5. PUT /api/admin/reject-organizer/:id (currently UI-only behavior)
 
-Missing/weak areas:
-- no JWT/session middleware protecting routes
-- user identity is trusted from localStorage in frontend
-- no rate limiting on auth and API endpoints
-- limited validation/sanitization for URL/text fields
-- no automated test suite (backend/frontend)
-- no CI/CD pipeline or deployment automation
+### 5.2 Security and Production Hardening
+1. Add auth middleware (JWT/session) for protected routes
+2. Enforce server-side authorization by role/ownership
+3. Add request validation on write endpoints
+4. Add rate limiting for auth and critical APIs
+5. Tighten CORS policy
 
-## 7. Data/Schema and Code Alignment Notes
+### 5.3 Quality and Operations
+1. Add backend tests (unit + integration for procedures/endpoints)
+2. Add frontend integration/smoke tests
+3. Add CI pipeline (lint/test/build)
+4. Add backend npm scripts for start/dev/test workflow consistency
 
-Observed alignment:
-- SQL schema includes LinkedInURL/GitHubURL for student profile and backend student profile update reads/writes them
-- vw_UpcomingEvents shape supports student dashboard consumption
-- procedures for registration/team flows match backend endpoint usage
+## 6. Updated Risk/Gap Notes
+- Admin dashboard still relies partly on fallback/mock data due to missing admin endpoints.
+- Identity still depends on client-held storage; no signed server session yet.
+- Test automation and CI are still absent.
 
-Observed mismatch/gaps:
-- organizer profile update path not aligned between frontend and backend logic
-- frontend routes for create/edit/view event pages are referenced but absent
-- root package.json only contains express dependency and does not orchestrate full monorepo scripts
-
-## 8. Recommended Next Milestones
-
-Priority 1 (functional completeness):
-1. Implement organizer event creation page at /events/new and corresponding backend create endpoint if absent
-2. Implement event detail and edit pages/routes referenced by organizer dashboard
-3. Wire student event registration button to POST /api/events/register
-4. Fix PUT /api/profile/:id to branch by role and update OrganizerProfiles correctly
-
-Priority 2 (stability/security):
-1. Add JWT/session auth middleware and protect sensitive endpoints
-2. Add input validation layer (e.g., zod/joi) for all write endpoints
-3. Add rate limiting and stricter CORS policy
-4. Add backend API tests and basic frontend integration tests
-
-Priority 3 (production readiness):
-1. Add CI pipeline (lint/test/build)
-2. Add deployment config and environment strategy
-3. Add database migration/versioning workflow
-4. Add observability/logging standards
-
-## 9. LLM-Ready Context Block
-Use the following block directly when prompting another LLM:
-
-```markdown
-Project: EventDhondo (campus event discovery + organizer operations)
-Stack:
-- Backend: Node.js + Express + mssql + bcrypt
-- Frontend: Next.js 16 App Router + React 19 + Tailwind v4
-- DB: SQL Server with schema/procedures/views scripts
-
-Current state summary:
-- Auth/register/login and role routing are implemented.
-- Student and organizer dashboards exist and fetch events.
-- Student profile fetch/update is implemented.
-- Team creation/invite backend endpoints exist.
-- Event registration/check-in/notifications backend endpoints exist.
-
-Known gaps:
-- Organizer profile update path is not correctly handled by backend PUT profile logic.
-- /events/new, /events/[id], /events/edit/[id] frontend routes are referenced but missing.
-- Student UI is not yet wired to call POST /api/events/register.
-- No JWT/session middleware; security hardening and tests are pending.
-
-High-priority next tasks:
-1) Build missing event routes/pages in frontend.
-2) Add backend event creation/update endpoints as needed.
-3) Fix organizer profile update handling in backend.
-4) Integrate registration CTA in student dashboard with backend endpoint.
-5) Add route protection + validation + rate limiting.
-```
-
-## 10. Conclusion
-The project has a strong functional base and clear domain coverage across frontend, backend, and SQL. It is already suitable for demos and iterative feature work. The remaining effort is concentrated in route completion, role-specific profile correctness, and production-grade security/testing.
+## 7. Conclusion
+The project moved from partial integration to a working full-stack event lifecycle for the primary student/organizer journeys. The biggest completed milestones were backend event-create/register/unregister coverage, organizer workflow wiring, and tab-isolated session handling across the app. The remaining backend work is concentrated in admin reporting/action endpoints and production-grade security/testing.

@@ -25,20 +25,21 @@ export default function DashboardO() {
   const [searchTerm, setSearchTerm] = useState("");
   const [removeCandidate, setRemoveCandidate] = useState("");
   const organizerId = typeof window !== "undefined"
-    ? (localStorage.getItem("userID") || localStorage.getItem("userId"))
+    ? (sessionStorage.getItem("userID") || sessionStorage.getItem("userId") || localStorage.getItem("userID") || localStorage.getItem("userId"))
     : null;
 
   useEffect(() => {
     const savedName = organizerId
       ? (
         localStorage.getItem(`displayName:${organizerId}`)
+        || sessionStorage.getItem("displayName")
         || localStorage.getItem(`organizationName:${organizerId}`)
         || localStorage.getItem("displayName")
       )
-      : localStorage.getItem("displayName");
+      : (sessionStorage.getItem("displayName") || localStorage.getItem("displayName"));
     const savedEmail = organizerId
-      ? (localStorage.getItem(`userEmail:${organizerId}`) || localStorage.getItem("userEmail"))
-      : localStorage.getItem("userEmail");
+      ? (localStorage.getItem(`userEmail:${organizerId}`) || sessionStorage.getItem("userEmail") || localStorage.getItem("userEmail"))
+      : (sessionStorage.getItem("userEmail") || localStorage.getItem("userEmail"));
     if (savedName) setOrgName(savedName);
     if (savedEmail) setUserEmail(savedEmail);
 

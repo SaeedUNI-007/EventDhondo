@@ -1,102 +1,119 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
 export default function RegisterEventPage() {
+  const search = useSearchParams();
+  const preselectedEventId = search.get("eventId");
   const [events, setEvents] = useState([]);
   const [selectedEventId, setSelectedEventId] = useState("");
-  const [seats, setSeats] = useState(1);
-  const [contact, setContact] = useState("");
   const [msg, setMsg] = useState("");
 
+  function formatDate(value) {
+    if (!value) return "TBA";
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return String(value);
+    return d.toLocaleDateString();
+  }
+
+  function formatTime(value) {
+    if (!value) return "TBA";
+    const raw = String(value);
+
+    if (/^\d{2}:\d{2}(:\d{2})?$/.test(raw)) {
+      const [h, m] = raw.split(":");
+      return new Date(1970, 0, 1, Number(h), Number(m)).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    }
+
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return raw;
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
   useEffect(() => {
-    const ev = JSON.parse(localStorage.getItem("events") || "[]");
-    setEvents(ev);
-    if (ev.length) setSelectedEventId(String(ev[0].id));
-  }, []);
+    const loadEvents = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/events`);
+        const data = await res.json();
 
-  const userId = typeof window !== "undefined" ? (localStorage.getItem("userId") || "anonymous") : "anonymous";
+        if (!res.ok || !Array.isArray(data)) {
+          throw new Error(data?.message || "Failed to load events");
+        }
 
-  function handleSubmit(e) {
+        setEvents(data);
+        if (preselectedEventId) {
+          setSelectedEventId(String(preselectedEventId));
+        } else if (data.length) {
+          setSelectedEventId(String(data[0].EventID || data[0].id || ""));
+        }
+      } catch (_err) {
+        setMsg("Could not load events from server.");
+      }
+    };
+
+    loadEvents();
+  }, [preselectedEventId]);
+
+  const userId = typeof window !== "undefined"
+    ? (sessionStorage.getItem("userId") || sessionStorage.getItem("userID") || localStorage.getItem("userId") || localStorage.getItem("userID") || "")
+    : "";
+
+  async function handleSubmit(e) {
     e.preventDefault();
+    setMsg("");
+
+    const numericUserId = Number(userId);
+    if (!Number.isInteger(numericUserId) || numericUserId <= 0) {
+      setMsg("Please login again before registering for an event.");
+      return;
+    }
+
     if (!selectedEventId) {
       setMsg("Select an event to register.");
       return;
     }
-    const ev = events.find(x => String(x.id) === String(selectedEventId));
+
+    const eventId = Number(selectedEventId);
+    const ev = events.find(x => String(x.EventID || x.id) === String(selectedEventId));
     if (!ev) {
       setMsg("Selected event not found.");
       return;
     }
 
-    const requested = parseInt(seats, 10) || 1;
-    if (requested < 1) {
-      setMsg("Enter at least 1 seat.");
+    if (!Number.isInteger(eventId) || eventId <= 0) {
+      setMsg("Selected event has invalid id.");
       return;
     }
 
-    // Build registration object (required per schema: userId, eventId)
-    const registration = {
-      id: Date.now(),
-      eventId: ev.id,
-      userId,
-      seats: requested,
-      contact: contact || "",
-      status: "Registered",
-      registeredAt: new Date().toISOString()
-    };
-
-    // Check capacity and either register or add to waitlist
-    const eventsKey = "events";
-    const allEvents = JSON.parse(localStorage.getItem(eventsKey) || "[]");
-    const idx = allEvents.findIndex(x => x.id === ev.id);
-
-    const registrationsKey = "registrations";
-    const regs = JSON.parse(localStorage.getItem(registrationsKey) || "[]");
-
-    // calculate already taken seats for event
-    const taken = regs.filter(r => String(r.eventId) === String(ev.id) && r.status === "Registered").reduce((s, r) => s + (r.seats || 1), 0);
-    const remaining = (ev.capacity || 0) - taken;
-
-    if (remaining >= requested) {
-      // register
-      regs.push(registration);
-      localStorage.setItem(registrationsKey, JSON.stringify(regs));
-
-      // optional: reduce capacity value on event (keeps original capacity but for UI we rely on taken calc)
-      setMsg("Registration successful. You are registered for the event.");
-    } else {
-      // add to waitlist
-      const waitKey = "registrationWaitlist";
-      const wait = JSON.parse(localStorage.getItem(waitKey) || "[]");
-      wait.push({
-        id: Date.now(),
-        eventId: ev.id,
-        userId,
-        seats: requested,
-        contact: contact || "",
-        addedAt: new Date().toISOString()
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/events/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: numericUserId, eventId }),
       });
-      localStorage.setItem(waitKey, JSON.stringify(wait));
-      setMsg("Event is full for requested seats. You were added to the waitlist.");
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.message || "Registration failed");
+      }
+
+      setMsg(data?.message || "Registration request submitted.");
+    } catch (err) {
+      setMsg(err?.message || "Registration failed.");
     }
-
-    // notify admin (simple local notification)
-    const notesKey = "adminNotifications";
-    const notes = JSON.parse(localStorage.getItem(notesKey) || "[]");
-    notes.push({ id: Date.now(), type: "Registration", eventId: ev.id, from: userId, time: new Date().toISOString() });
-    localStorage.setItem(notesKey, JSON.stringify(notes));
-
-    // reset form lightly
-    setSeats(1);
-    setContact("");
   }
 
   return (
     <main className="min-h-screen shell">
       <div className="surface-card p-6 md:p-8 max-w-3xl mx-auto">
         <h1 className="text-2xl font-bold mb-3">Register for an Event</h1>
-        <p className="text-sm text-slate-600 mb-4">Select a published event and submit registration. Required: selected event and number of seats.</p>
+        <p className="text-sm text-slate-600 mb-4">Select a published event and submit registration. Each student registration is for one seat.</p>
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
@@ -104,22 +121,11 @@ export default function RegisterEventPage() {
             <select value={selectedEventId} onChange={e => setSelectedEventId(e.target.value)} className="w-full p-2 border rounded">
               {events.length === 0 && <option value="">No events published</option>}
               {events.map(ev => (
-                <option key={ev.id} value={ev.id}>
-                  {ev.title} — {ev.eventDate} {ev.eventTime} — capacity: {ev.capacity || "N/A"}
+                <option key={ev.EventID || ev.id} value={ev.EventID || ev.id}>
+                  {(ev.Title || ev.title)} - {formatDate(ev.EventDate || ev.eventDate)} {formatTime(ev.EventTime || ev.eventTime)} - capacity: {(ev.Capacity || ev.capacity || "N/A")}
                 </option>
               ))}
             </select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium">Seats *</label>
-              <input type="number" min="1" value={seats} onChange={e => setSeats(e.target.value)} className="w-full p-2 border rounded" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">Contact (email/phone)</label>
-              <input value={contact} onChange={e => setContact(e.target.value)} className="w-full p-2 border rounded" />
-            </div>
           </div>
 
           <div className="flex gap-3 items-center">

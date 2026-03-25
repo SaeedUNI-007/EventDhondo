@@ -61,7 +61,7 @@ export default function ProfilePage() {
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    const userId = localStorage.getItem('userID') || localStorage.getItem('userId');
+    const userId = sessionStorage.getItem('userID') || sessionStorage.getItem('userId') || localStorage.getItem('userID') || localStorage.getItem('userId');
     setCurrentUserId(userId || '');
 
     const readInitial = (key, fallback = '') => {
@@ -131,6 +131,8 @@ export default function ProfilePage() {
         localStorage.setItem(`linkA:${userId}`, resolvedLinkedIn);
         localStorage.setItem(`linkB:${userId}`, resolvedGitHub);
 
+        sessionStorage.setItem('displayName', resolvedName);
+        sessionStorage.setItem('userEmail', resolvedEmail);
         localStorage.setItem('displayName', resolvedName);
         localStorage.setItem('userEmail', resolvedEmail);
         localStorage.setItem('profilePictureURL', resolvedPic);
@@ -168,7 +170,9 @@ export default function ProfilePage() {
 
   const handleFullSave = async (e) => {
     e.preventDefault();
-    const userId = localStorage.getItem('userID') || localStorage.getItem('userId');
+    const userId = sessionStorage.getItem('userID') || sessionStorage.getItem('userId') || localStorage.getItem('userID') || localStorage.getItem('userId');
+    sessionStorage.setItem('displayName', name);
+    if (email) sessionStorage.setItem('userEmail', email);
     localStorage.setItem('displayName', name);
     if (email) localStorage.setItem('userEmail', email);
     writeScopedValue('displayName', name);

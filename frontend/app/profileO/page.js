@@ -43,7 +43,7 @@ export default function ProfileO() {
   };
 
   useEffect(() => {
-    const userId = localStorage.getItem("userID") || localStorage.getItem("userId");
+    const userId = sessionStorage.getItem("userID") || sessionStorage.getItem("userId") || localStorage.getItem("userID") || localStorage.getItem("userId");
     setCurrentUserId(userId || "");
 
     const readInitial = (key, fallback = "") => {
@@ -97,6 +97,8 @@ export default function ProfileO() {
         localStorage.setItem(`displayName:${userId}`, nextName);
         localStorage.setItem(`profilePictureURL:${userId}`, nextPic);
 
+        sessionStorage.setItem("displayName", nextName);
+        sessionStorage.setItem("userEmail", nextEmail);
         localStorage.setItem("organizationName", nextName);
         localStorage.setItem("userEmail", nextEmail);
         localStorage.setItem("displayName", nextName);
@@ -203,6 +205,8 @@ export default function ProfileO() {
                     type="button"
                     onClick={async () => {
                     localStorage.setItem("organizationName", orgName);
+                    sessionStorage.setItem("displayName", orgName);
+                    sessionStorage.setItem("userEmail", contactEmail);
                     localStorage.setItem("userEmail", contactEmail);
                     localStorage.setItem("displayName", orgName);
                     writeScopedValue("organizationName", orgName);
@@ -212,7 +216,7 @@ export default function ProfileO() {
                     writeScopedValue("displayName", orgName);
                     writeScopedValue("profilePictureURL", profilePictureDataUrl || "");
 
-                    const userId = localStorage.getItem("userID") || localStorage.getItem("userId");
+                    const userId = sessionStorage.getItem("userID") || sessionStorage.getItem("userId") || localStorage.getItem("userID") || localStorage.getItem("userId");
                     if (!userId) {
                       alert("Organization profile saved locally. Please login again to sync backend.");
                       return;

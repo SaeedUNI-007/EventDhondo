@@ -5,7 +5,9 @@ import Link from "next/link";
 export default function RequestsOrg() {
   const [pending, setPending] = useState([]);
   const [events, setEvents] = useState([]);
-  const userId = typeof window !== "undefined" ? (localStorage.getItem("userId") || localStorage.getItem("orgId") || "org") : "org";
+  const userId = typeof window !== "undefined"
+    ? (sessionStorage.getItem("userId") || sessionStorage.getItem("userID") || localStorage.getItem("userId") || localStorage.getItem("orgId") || "org")
+    : "org";
 
   useEffect(() => {
     const allReq = JSON.parse(localStorage.getItem("eventRequests") || "[]");

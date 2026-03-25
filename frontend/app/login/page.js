@@ -28,19 +28,21 @@ export default function Login() {
       const data = await response.json();
 
       if (response.ok) {
-        // UI Action: Save UserID in localStorage 
+        // Keep active auth in sessionStorage so different tabs can use different accounts.
         const resolvedUserId = String(data.userId ?? data.userID ?? '');
         const resolvedRole = String(data.role || 'Student');
 
-        localStorage.setItem('userID', resolvedUserId);
-        localStorage.setItem('userId', resolvedUserId);
-        localStorage.setItem('userRole', resolvedRole);
-        localStorage.setItem('userEmail', email);
+        sessionStorage.setItem('userID', resolvedUserId);
+        sessionStorage.setItem('userId', resolvedUserId);
+        sessionStorage.setItem('userRole', resolvedRole);
+        sessionStorage.setItem('userEmail', email);
+
+        // Scoped profile cache can remain in localStorage.
         localStorage.setItem(`userEmail:${resolvedUserId}`, email);
         const guessedName = email.split('@')[0].replace(/[._-]+/g, ' ');
         const titleCaseName = guessedName.replace(/\b\w/g, (c) => c.toUpperCase());
         const safeDisplayName = titleCaseName || 'Student';
-        localStorage.setItem('displayName', safeDisplayName);
+        sessionStorage.setItem('displayName', safeDisplayName);
         localStorage.setItem(`displayName:${resolvedUserId}`, safeDisplayName);
 
         if (resolvedRole.toLowerCase() === 'admin') {

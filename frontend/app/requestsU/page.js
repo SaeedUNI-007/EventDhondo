@@ -1,19 +1,22 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
 
 export default function RequestsUser() {
-  const [pending, setPending] = useState([]);
-  const userId = typeof window !== "undefined" ? (localStorage.getItem("userId") || "anon") : "anon";
+  const userId = typeof window !== "undefined"
+    ? (sessionStorage.getItem("userId") || sessionStorage.getItem("userID") || localStorage.getItem("userId") || localStorage.getItem("userID") || "")
+    : "";
 
-  useEffect(() => {
+  const pending = useMemo(() => {
+    if (typeof window === "undefined") return [];
     const all = JSON.parse(localStorage.getItem("eventRequests") || "[]");
-    const onlyPending = all.filter(r => String(r.userId) === String(userId) && (r.status || "Pending") === "Pending");
-    setPending(onlyPending);
+    // Event request form currently stores requester in organizerId.
+    return all.filter(
+      (r) => String(r.organizerId || r.userId) === String(userId) && String(r.status || "Pending").toLowerCase() === "pending"
+    );
   }, [userId]);
 
   function titleForEvent(r) {
-    // prefer stored request fields; fallback to events list if needed
     return r.title || r.eventTitle || `Request ${r.id}`;
   }
 

@@ -1,7 +1,8 @@
 // server.js
 const express = require('express');
 const cors = require('cors');
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 // 1. IMPORT DATABASE CONNECTION
 const { poolPromise } = require('./db');

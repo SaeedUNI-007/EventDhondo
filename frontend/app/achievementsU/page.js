@@ -34,7 +34,9 @@ export default function AchievementsUser() {
   const [achievements, setAchievements] = useState([]);
   const [events, setEvents] = useState([]);
   const [registrations, setRegistrations] = useState([]);
-  const userId = typeof window !== "undefined" ? (localStorage.getItem("userId") || "anonymous") : "anonymous";
+  const userId = typeof window !== "undefined"
+    ? (sessionStorage.getItem("userId") || sessionStorage.getItem("userID") || localStorage.getItem("userId") || "anonymous")
+    : "anonymous";
 
   useEffect(() => {
     const all = JSON.parse(localStorage.getItem("studentAchievements") || "[]");

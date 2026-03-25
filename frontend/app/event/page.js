@@ -16,8 +16,12 @@ export default function EventRequestPage() {
   });
   const [msg, setMsg] = useState("");
 
-  const userId = typeof window !== "undefined" ? (localStorage.getItem("userId") || "anonymous") : "anonymous";
-  const role = typeof window !== "undefined" ? (localStorage.getItem("userRole") || "organizer") : "organizer";
+  const userId = typeof window !== "undefined"
+    ? (sessionStorage.getItem("userId") || sessionStorage.getItem("userID") || localStorage.getItem("userId") || "anonymous")
+    : "anonymous";
+  const role = typeof window !== "undefined"
+    ? (sessionStorage.getItem("userRole") || localStorage.getItem("userRole") || "organizer")
+    : "organizer";
 
   function handleChange(e) {
     const { name, value } = e.target;

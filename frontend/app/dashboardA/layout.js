@@ -18,7 +18,7 @@ export default function AdminLayout({ children }) {
   const [isAllowed, setIsAllowed] = useState(false);
 
   useEffect(() => {
-    const role = String(localStorage.getItem("userRole") || "").toLowerCase();
+    const role = String(sessionStorage.getItem("userRole") || localStorage.getItem("userRole") || "").toLowerCase();
     if (role !== "admin") {
       router.replace("/login");
       return;

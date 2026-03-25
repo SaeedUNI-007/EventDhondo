@@ -3,33 +3,87 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+
 export default function ViewEventOrg() {
   const search = useSearchParams();
   const router = useRouter();
   const eventId = search.get("eventId");
   const [eventData, setEventData] = useState(null);
-  const [registrations, setRegistrations] = useState([]);
-  const userId = typeof window !== "undefined" ? (localStorage.getItem("userId") || localStorage.getItem("orgId") || "") : "";
+  const [message, setMessage] = useState("");
+  const userId = typeof window !== "undefined"
+    ? (sessionStorage.getItem("userId") || sessionStorage.getItem("userID") || localStorage.getItem("userId") || localStorage.getItem("orgId") || "")
+    : "";
+
+  function formatDate(value) {
+    if (!value) return "TBA";
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return String(value);
+    return d.toLocaleDateString();
+  }
+
+  function formatTime(value) {
+    if (!value) return "TBA";
+    const raw = String(value);
+    if (/^\d{2}:\d{2}(:\d{2})?$/.test(raw)) {
+      const [h, m] = raw.split(":");
+      return new Date(1970, 0, 1, Number(h), Number(m)).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    }
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return raw;
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
 
   useEffect(() => {
-    if (!eventId) return;
-    const evs = JSON.parse(localStorage.getItem("events") || "[]");
-    const ev = evs.find(e => String(e.id) === String(eventId) || String(e.eventId) === String(eventId));
-    setEventData(ev || null);
+    const loadEvent = async () => {
+      if (!eventId) return;
+      try {
+        setMessage("");
+        const organizerId = Number(userId);
+        const hasValidOrganizer = Number.isInteger(organizerId) && organizerId > 0;
+        const url = hasValidOrganizer
+          ? `${API_BASE_URL}/api/events?organizerId=${encodeURIComponent(organizerId)}`
+          : `${API_BASE_URL}/api/events`;
 
-    const regs = JSON.parse(localStorage.getItem("registrations") || "[]");
-    const regsFor = regs.filter(r => String(r.eventId) === String(eventId) && (String(r.status || "").toLowerCase() === "registered"));
-    setRegistrations(regsFor);
-  }, [eventId]);
+        const res = await fetch(url);
+        const data = await res.json();
+        if (!res.ok || !Array.isArray(data)) {
+          throw new Error(data?.message || "Failed to load event");
+        }
+
+        const ev = data.find((e) => String(e.EventID || e.id || e.eventId) === String(eventId));
+        setEventData(ev || null);
+      } catch (err) {
+        setEventData(null);
+        setMessage(err?.message || "Could not load event.");
+      }
+    };
+
+    loadEvent();
+  }, [eventId, userId]);
 
   if (!eventId) return <main className="min-h-screen shell"><div className="p-6">No event specified.</div></main>;
   if (!eventData) return <main className="min-h-screen shell"><div className="p-6">Event not found.</div></main>;
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!confirm("Delete this event?")) return;
-    const all = JSON.parse(localStorage.getItem("events") || "[]").filter(x => String(x.id) !== String(eventId));
-    localStorage.setItem("events", JSON.stringify(all));
-    router.push("/dashboardO");
+
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/events/${encodeURIComponent(eventId)}?organizerId=${encodeURIComponent(userId || "")}`,
+        { method: "DELETE" }
+      );
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.message || "Delete failed");
+      }
+      router.push("/dashboardO");
+    } catch (err) {
+      setMessage(err?.message || "Delete failed.");
+    }
   }
 
   return (
@@ -45,10 +99,12 @@ export default function ViewEventOrg() {
           </div>
         </div>
 
+        {message && <p className="mb-3 text-sm text-slate-700">{message}</p>}
+
         <div className="grid md:grid-cols-2 gap-4">
           <div>
-            <p className="text-sm"><strong>Date:</strong> {eventData.eventDate || eventData.EventDate || "TBA"}</p>
-            <p className="text-sm"><strong>Time:</strong> {eventData.eventTime || eventData.Time || "TBA"}</p>
+            <p className="text-sm"><strong>Date:</strong> {formatDate(eventData.eventDate || eventData.EventDate)}</p>
+            <p className="text-sm"><strong>Time:</strong> {formatTime(eventData.eventTime || eventData.EventTime || eventData.Time)}</p>
             <p className="text-sm"><strong>Venue:</strong> {eventData.venue || eventData.Venue || "TBA"}</p>
             <p className="mt-3 text-sm">{eventData.description || eventData.Description || ""}</p>
           </div>
@@ -60,20 +116,8 @@ export default function ViewEventOrg() {
             </div>
 
             <div>
-              <h3 className="font-semibold mb-2">Registrations ({registrations.length})</h3>
-              {registrations.length === 0 ? (
-                <p className="text-sm text-slate-600">No registrations yet.</p>
-              ) : (
-                <div className="space-y-2 text-sm">
-                  {registrations.map(r => (
-                    <div key={r.id} className="p-2 bg-white rounded border">
-                      <div><strong>User:</strong> {r.userId}</div>
-                      <div><strong>Seats:</strong> {r.seats || 1}</div>
-                      <div><strong>At:</strong> {new Date(r.registeredAt || r.createdAt || r.id).toLocaleString()}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <h3 className="font-semibold mb-2">Registrations</h3>
+              <p className="text-sm text-slate-600">Registration list endpoint is not available yet. This page is now connected for event details and deletion only.</p>
             </div>
           </div>
         </div>

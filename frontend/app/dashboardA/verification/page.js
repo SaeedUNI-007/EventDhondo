@@ -30,15 +30,43 @@ export default function OrganizerVerificationPage() {
     const loadPending = async () => {
       try {
         setStatus("");
-        const res = await fetch(`${API_BASE_URL}/api/admin/pending-organizers`);
-        if (!res.ok) {
+        const usersRes = await fetch(`${API_BASE_URL}/api/users`);
+        if (!usersRes.ok) {
           setOrganizers(FALLBACK_PENDING_ORGANIZERS);
-          setStatus("Using mock organizers because pending-organizers endpoint is not available yet.");
+          setStatus("Using mock organizers because users endpoint is not available.");
           return;
         }
 
-        const data = await res.json();
-        setOrganizers(Array.isArray(data) ? data : FALLBACK_PENDING_ORGANIZERS);
+        const users = await usersRes.json();
+        const organizerUsers = Array.isArray(users)
+          ? users.filter((u) => String(u.Role || "").toLowerCase() === "organizer")
+          : [];
+
+        const profileRows = await Promise.all(
+          organizerUsers.map(async (u) => {
+            const id = Number(u.UserID);
+            if (!Number.isInteger(id) || id <= 0) return null;
+
+            const profileRes = await fetch(`${API_BASE_URL}/api/profile/${encodeURIComponent(id)}`);
+            if (!profileRes.ok) return null;
+
+            const profile = await profileRes.json();
+            if (String(profile?.VerificationStatus || "").toLowerCase() !== "pending") {
+              return null;
+            }
+
+            return {
+              UserID: id,
+              OrganizationName: profile.OrganizationName || `Organizer ${id}`,
+              ContactEmail: profile.ContactEmail || u.Email || "-",
+              Description: profile.Description || "",
+              RequestedDate: profile.CreatedAt ? String(profile.CreatedAt).slice(0, 10) : "-",
+            };
+          })
+        );
+
+        const pendingRows = profileRows.filter(Boolean);
+        setOrganizers(pendingRows);
       } catch (_err) {
         setOrganizers(FALLBACK_PENDING_ORGANIZERS);
         setStatus("Using mock organizers due to API connectivity issues.");

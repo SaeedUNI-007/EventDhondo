@@ -6,7 +6,7 @@ const NAV_LOGO_SRC = '/Logo.png';
 
 export default function Home() {
   const userRole = typeof window !== 'undefined'
-    ? (localStorage.getItem('userRole') || '').toLowerCase()
+    ? (sessionStorage.getItem('userRole') || localStorage.getItem('userRole') || '').toLowerCase()
     : '';
 
   const previewHref = userRole === 'organizer'

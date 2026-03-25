@@ -2,6 +2,8 @@
 import Link from 'next/link';
 import { useEffect, useState, useMemo } from 'react';
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
 export default function DashboardStudent() {
   const [userRole, setUserRole] = useState('');
   const [events, setEvents] = useState([]);
@@ -14,19 +16,40 @@ export default function DashboardStudent() {
   const [dateOrder, setDateOrder] = useState('asc'); // 'asc' | 'desc'
   const [searchTerm, setSearchTerm] = useState('');
 
+  function formatDate(value) {
+    if (!value) return '';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return String(value);
+    return d.toLocaleDateString();
+  }
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      setUserRole((localStorage.getItem('userRole') || '').toLowerCase());
-      setEvents(JSON.parse(localStorage.getItem('events') || '[]'));
-      const id = localStorage.getItem('userId') || localStorage.getItem('userID');
-      const name = id ? (localStorage.getItem(`displayName:${id}`) || localStorage.getItem('displayName')) : localStorage.getItem('displayName');
-      const email = id ? (localStorage.getItem(`userEmail:${id}`) || localStorage.getItem('userEmail')) : localStorage.getItem('userEmail');
+      setUserRole((sessionStorage.getItem('userRole') || localStorage.getItem('userRole') || '').toLowerCase());
+      const id = sessionStorage.getItem('userId') || sessionStorage.getItem('userID') || localStorage.getItem('userId') || localStorage.getItem('userID');
+      const name = id ? (localStorage.getItem(`displayName:${id}`) || sessionStorage.getItem('displayName') || localStorage.getItem('displayName')) : (sessionStorage.getItem('displayName') || localStorage.getItem('displayName'));
+      const email = id ? (localStorage.getItem(`userEmail:${id}`) || sessionStorage.getItem('userEmail') || localStorage.getItem('userEmail')) : (sessionStorage.getItem('userEmail') || localStorage.getItem('userEmail'));
       if (name) setDisplayName(name);
       if (email) setUserEmail(email);
-      // derive event types list from events
-      const evs = JSON.parse(localStorage.getItem('events') || '[]');
-      const types = Array.from(new Set(evs.map(e => (e.eventType || e.EventType || 'Other')).filter(Boolean)));
-      setEventTypes(types);
+
+      const loadEvents = async () => {
+        try {
+          const res = await fetch(`${API_BASE_URL}/api/events`);
+          const data = await res.json();
+          if (!res.ok || !Array.isArray(data)) {
+            throw new Error('Failed to load events');
+          }
+
+          setEvents(data);
+          const types = Array.from(new Set(data.map(e => (e.eventType || e.EventType || 'Other')).filter(Boolean)));
+          setEventTypes(types);
+        } catch (_err) {
+          setEvents([]);
+          setEventTypes([]);
+        }
+      };
+
+      loadEvents();
     }
   }, []);
 
@@ -38,7 +61,9 @@ export default function DashboardStudent() {
     { label: 'Requests', href: '/requestsU' },
      ];
 
-  const userId = typeof window !== 'undefined' ? (localStorage.getItem('userId') || localStorage.getItem('userID')) : null;
+  const userId = typeof window !== 'undefined'
+    ? (sessionStorage.getItem('userId') || sessionStorage.getItem('userID') || localStorage.getItem('userId') || localStorage.getItem('userID'))
+    : null;
 
   function isOwner(ev) {
     const oid = (ev.organizerId ?? ev.organizer ?? ev.createdBy ?? ev.creatorId ?? ev.userId);
@@ -241,10 +266,10 @@ export default function DashboardStudent() {
 
             <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
               {displayedEvents.map(ev => (
-                <article key={ev.id} className="surface-card reveal-up overflow-hidden p-4">
+                <article key={ev.EventID || ev.id || ev.eventId} className="surface-card reveal-up overflow-hidden p-4">
                   <div className="mb-3 flex items-center justify-between">
                     <p className="rounded-full bg-[var(--surface-soft)] px-3 py-1 text-xs font-bold text-[var(--brand-strong)]">{ev.eventType || ev.EventType || "Event"}</p>
-                    <p className="text-xs font-semibold text-slate-500">{ev.eventDate || ev.eventDate || ""}</p>
+                    <p className="text-xs font-semibold text-slate-500">{formatDate(ev.EventDate || ev.eventDate)}</p>
                   </div>
                   <h3 className="text-lg font-bold text-slate-900">{ev.title || ev.Title}</h3>
                   <p className="mt-1 text-sm text-slate-600">{(ev.description || ev.Description || "").slice(0, 140)}</p>
@@ -253,17 +278,27 @@ export default function DashboardStudent() {
                   <div className="mt-4 flex gap-2">
                     {viewMode === 'available' ? (
                       <>
-                        <Link href={`/viewEvent?eventId=${ev.id}`} className="cta px-3 py-2 text-sm font-semibold">Register</Link>
-                        <Link href={`/event/view/${ev.id}`} className="rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm font-semibold hover:bg-[var(--surface-soft)]">Details</Link>
+                        <Link href={`/viewEvent?eventId=${ev.EventID || ev.id || ev.eventId}`} className="cta px-3 py-2 text-sm font-semibold">Register</Link>
+                        <Link href={`/event/view/${ev.EventID || ev.id || ev.eventId}`} className="rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm font-semibold hover:bg-[var(--surface-soft)]">Details</Link>
                       </>
                     ) : (
                       <>
-                        <Link href={`/event/edit/${ev.id}`} className="px-3 py-2 text-sm text-slate-700 rounded-md border hover:bg-[var(--surface-soft)]">Edit</Link>
-                        <button onClick={() => {
-                          // simple local-delete for own events (remove from localStorage)
-                          const all = JSON.parse(localStorage.getItem('events') || '[]').filter(x => String(x.id) !== String(ev.id));
-                          localStorage.setItem('events', JSON.stringify(all));
-                          setEvents(all);
+                        <Link href={`/event/edit/${ev.EventID || ev.id || ev.eventId}`} className="px-3 py-2 text-sm text-slate-700 rounded-md border hover:bg-[var(--surface-soft)]">Edit</Link>
+                        <button onClick={async () => {
+                          const targetId = ev.EventID || ev.id || ev.eventId;
+                          const ok = window.confirm('Delete this event?');
+                          if (!ok) return;
+                          try {
+                            const res = await fetch(`${API_BASE_URL}/api/events/${encodeURIComponent(targetId)}?organizerId=${encodeURIComponent(userId || '')}`, {
+                              method: 'DELETE',
+                            });
+                            if (!res.ok) {
+                              throw new Error('Delete failed');
+                            }
+                            setEvents(prev => prev.filter(x => String(x.EventID || x.id || x.eventId) !== String(targetId)));
+                          } catch (_err) {
+                            window.alert('Could not delete event from server.');
+                          }
                         }} className="px-3 py-2 text-sm text-white bg-red-600 rounded-md">Delete</button>
                       </>
                     )}

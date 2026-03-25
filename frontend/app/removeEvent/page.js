@@ -4,7 +4,9 @@ import Link from "next/link";
 
 export default function RemoveEventStudent() {
   const [events, setEvents] = useState([]);
-  const userId = typeof window !== "undefined" ? (localStorage.getItem("userId") || localStorage.getItem("userID") || "") : "";
+  const userId = typeof window !== "undefined"
+    ? (sessionStorage.getItem("userId") || sessionStorage.getItem("userID") || localStorage.getItem("userId") || localStorage.getItem("userID") || "")
+    : "";
 
   useEffect(() => {
     const all = JSON.parse(localStorage.getItem("events") || "[]");

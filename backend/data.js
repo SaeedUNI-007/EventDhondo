@@ -75,6 +75,191 @@ router.get('/events', async (req, res) => {
     }
 });
 
+// 2.1 POST Create Event (Organizer)
+router.post('/events', async (req, res) => {
+    const {
+        organizerId,
+        title,
+        description,
+        eventType,
+        eventDate,
+        eventTime,
+        venue,
+        capacity,
+        registrationDeadline,
+        posterURL,
+        status,
+    } = req.body || {};
+
+    const parsedOrganizerId = Number(organizerId);
+    const parsedCapacity = Number(capacity);
+    const normalizedTitle = String(title || '').trim();
+    const normalizedType = String(eventType || '').trim();
+    const normalizedVenue = venue === undefined ? null : (String(venue || '').trim() || null);
+    const normalizedDescription = description === undefined ? null : (String(description || '').trim() || null);
+    const normalizedPoster = posterURL === undefined ? null : (String(posterURL || '').trim() || null);
+    const normalizedStatus = String(status || 'Published').trim() || 'Published';
+
+    const normalizeDateInput = (value) => {
+        if (!value) return null;
+        const raw = String(value).trim();
+
+        // yyyy-mm-dd (native input[type=date])
+        if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+            return raw;
+        }
+
+        // dd/mm/yyyy (common locale display format)
+        const dmy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+        if (dmy) {
+            const day = Number(dmy[1]);
+            const month = Number(dmy[2]);
+            const year = Number(dmy[3]);
+
+            if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+            return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        }
+
+        const parsed = new Date(raw);
+        if (Number.isNaN(parsed.getTime())) return null;
+        return parsed.toISOString().slice(0, 10);
+    };
+
+    const normalizeTimeInput = (value) => {
+        if (!value) return null;
+        const raw = String(value).trim().toLowerCase();
+
+        // HH:mm or HH:mm:ss
+        const hhmm = raw.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+        if (hhmm) {
+            const h = Number(hhmm[1]);
+            const m = Number(hhmm[2]);
+            const s = Number(hhmm[3] || 0);
+            if (h > 23 || m > 59 || s > 59) return null;
+            return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        }
+
+        // h:mm am/pm
+        const ampm = raw.match(/^(\d{1,2}):(\d{2})\s*([ap]m)$/i);
+        if (ampm) {
+            let h = Number(ampm[1]);
+            const m = Number(ampm[2]);
+            const suffix = ampm[3].toLowerCase();
+            if (h < 1 || h > 12 || m > 59) return null;
+            if (suffix === 'pm' && h !== 12) h += 12;
+            if (suffix === 'am' && h === 12) h = 0;
+            return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
+        }
+
+        return null;
+    };
+
+    const normalizedEventDate = normalizeDateInput(eventDate);
+    const normalizedEventTime = normalizeTimeInput(eventTime);
+    const toDateOnlyLocal = (dateObj) => {
+        const y = dateObj.getFullYear();
+        const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const d = String(dateObj.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    };
+
+    if (!Number.isInteger(parsedOrganizerId) || parsedOrganizerId <= 0) {
+        return res.status(400).json({ success: false, message: 'Valid organizerId is required' });
+    }
+    if (!normalizedTitle) {
+        return res.status(400).json({ success: false, message: 'title is required' });
+    }
+    if (!normalizedType) {
+        return res.status(400).json({ success: false, message: 'eventType is required' });
+    }
+    if (!normalizedEventDate) {
+        return res.status(400).json({ success: false, message: 'Valid eventDate is required' });
+    }
+    if (!normalizedEventTime) {
+        return res.status(400).json({ success: false, message: 'eventTime is required' });
+    }
+    if (!Number.isInteger(parsedCapacity) || parsedCapacity <= 0) {
+        return res.status(400).json({ success: false, message: 'capacity must be greater than 0' });
+    }
+
+    // DB requires RegistrationDeadline. Default to event day start-time so it always satisfies CK_Events_Dates.
+    const fallbackDeadlineRaw = `${normalizedEventDate}T00:00:00`;
+    const parsedDeadline = new Date(registrationDeadline || fallbackDeadlineRaw);
+    if (Number.isNaN(parsedDeadline.getTime())) {
+        return res.status(400).json({ success: false, message: 'registrationDeadline must be a valid date-time' });
+    }
+
+    const deadlineDateOnly = toDateOnlyLocal(parsedDeadline);
+    if (deadlineDateOnly > normalizedEventDate) {
+        return res.status(400).json({
+            success: false,
+            message: 'Registration deadline date cannot be after event date.',
+        });
+    }
+
+    try {
+        const pool = await poolPromise;
+
+        const organizerProfileCheck = await pool.request()
+            .input('UserID', sql.Int, parsedOrganizerId)
+            .query(`
+                SELECT TOP 1 UserID
+                FROM [dbo].[OrganizerProfiles]
+                WHERE UserID = @UserID
+            `);
+
+        if (!organizerProfileCheck.recordset?.length) {
+            return res.status(400).json({
+                success: false,
+                message: 'Selected user is not an organizer profile. Please login with an organizer account.',
+            });
+        }
+
+        const result = await pool.request()
+            .input('OrganizerID', sql.Int, parsedOrganizerId)
+            .input('Title', sql.NVarChar(200), normalizedTitle)
+            .input('Description', sql.NVarChar(sql.MAX), normalizedDescription)
+            .input('EventType', sql.NVarChar(20), normalizedType)
+            .input('EventDate', sql.Date, normalizedEventDate)
+            .input('EventTime', sql.NVarChar(20), normalizedEventTime)
+            .input('Venue', sql.NVarChar(150), normalizedVenue)
+            .input('Capacity', sql.Int, parsedCapacity)
+            .input('RegistrationDeadline', sql.DateTimeOffset, parsedDeadline)
+            .input('Status', sql.NVarChar(20), normalizedStatus)
+            .input('PosterURL', sql.NVarChar(255), normalizedPoster)
+            .query(`
+                INSERT INTO [dbo].[Events]
+                    (OrganizerID, Title, Description, EventType, EventDate, EventTime, Venue, Capacity, RegistrationDeadline, Status, PosterURL)
+                OUTPUT
+                    INSERTED.EventID,
+                    INSERTED.OrganizerID,
+                    INSERTED.Title,
+                    INSERTED.Description,
+                    INSERTED.EventType,
+                    INSERTED.EventDate,
+                    INSERTED.EventTime,
+                    INSERTED.Venue,
+                    INSERTED.Capacity,
+                    INSERTED.RegistrationDeadline,
+                    INSERTED.Status,
+                    INSERTED.PosterURL
+                VALUES
+                    (@OrganizerID, @Title, @Description, @EventType, @EventDate, CAST(@EventTime AS TIME), @Venue, @Capacity, @RegistrationDeadline, @Status, @PosterURL)
+            `);
+
+        return res.status(201).json({ success: true, event: result.recordset?.[0] || null });
+    } catch (err) {
+        console.error('Create Event Error:', err);
+        if (err?.number === 547) {
+            return res.status(400).json({
+                success: false,
+                message: 'Organizer profile was not found for this user. Please complete organizer registration/profile first.',
+            });
+        }
+        return res.status(500).json({ success: false, message: err.message || 'Failed to create event' });
+    }
+});
+
 // 2.2 POST Register for Event (Sprint 2)
 router.post('/events/register', async (req, res) => {
     const { userId, eventId } = req.body;
@@ -91,9 +276,81 @@ router.post('/events/register', async (req, res) => {
             .execute('dbo.sp_RegisterForEvent');
 
         const message = result.recordset?.[0]?.Message || 'Registration processed';
+        const lowered = String(message).toLowerCase();
+
+        if (lowered.startsWith('error')) {
+            return res.status(400).json({ success: false, message });
+        }
+
+        return res.json({
+            success: true,
+            waitlisted: lowered.includes('waitlisted'),
+            message,
+        });
+    } catch (err) {
+        return res.status(400).json({ success: false, message: err.message });
+    }
+});
+
+// 2.2b POST Unregister from Event (uses existing SQL proc)
+router.post('/events/unregister', async (req, res) => {
+    const { userId, eventId } = req.body;
+
+    if (!Number.isInteger(Number(userId)) || !Number.isInteger(Number(eventId))) {
+        return res.status(400).json({ success: false, message: 'userId and eventId are required as integers' });
+    }
+
+    try {
+        const pool = await poolPromise;
+        const result = await pool.request()
+            .input('UserID', sql.Int, Number(userId))
+            .input('EventID', sql.Int, Number(eventId))
+            .execute('dbo.sp_UnregisterFromEvent');
+
+        const message = result.recordset?.[0]?.Message || 'Unregistration processed';
+        if (String(message).toLowerCase().startsWith('error')) {
+            return res.status(400).json({ success: false, message });
+        }
+
         return res.json({ success: true, message });
     } catch (err) {
         return res.status(400).json({ success: false, message: err.message });
+    }
+});
+
+// 2.2c GET Student Registrations
+router.get('/events/registrations/:userId', async (req, res) => {
+    const userId = Number(req.params.userId);
+    if (!Number.isInteger(userId) || userId <= 0) {
+        return res.status(400).json({ success: false, message: 'Valid userId is required' });
+    }
+
+    try {
+        const pool = await poolPromise;
+        const result = await pool.request()
+            .input('UserID', sql.Int, userId)
+            .query(`
+                SELECT
+                    r.RegistrationID,
+                    r.EventID,
+                    r.UserID,
+                    r.Status,
+                    r.RegistrationDate,
+                    r.CancelledAt,
+                    e.Title,
+                    e.EventDate,
+                    e.EventTime,
+                    e.Venue,
+                    e.EventType
+                FROM [dbo].[Registrations] r
+                JOIN [dbo].[Events] e ON e.EventID = r.EventID
+                WHERE r.UserID = @UserID
+                ORDER BY r.RegistrationDate DESC
+            `);
+
+        return res.json(result.recordset);
+    } catch (err) {
+        return res.status(500).json({ success: false, message: err.message });
     }
 });
 

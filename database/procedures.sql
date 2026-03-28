@@ -1,11 +1,11 @@
-USE [EventDhondo];
+﻿USE [EventDhondo];
 GO
 
 IF OBJECT_ID(N'dbo.sp_RegisterStudent', N'P') IS NOT NULL
     DROP PROCEDURE dbo.sp_RegisterStudent;
 GO
 
-CREATE PROCEDURE dbo.sp_RegisterStudent
+CREATE OR ALTER PROCEDURE dbo.sp_RegisterStudent
     @Email NVARCHAR(100),
     @PasswordHash NVARCHAR(255),
     @FirstName NVARCHAR(50),
@@ -44,7 +44,7 @@ IF OBJECT_ID(N'dbo.sp_UpdateStudentProfile', N'P') IS NOT NULL
     DROP PROCEDURE dbo.sp_UpdateStudentProfile;
 GO
 
-CREATE PROCEDURE dbo.sp_UpdateStudentProfile
+CREATE OR ALTER PROCEDURE dbo.sp_UpdateStudentProfile
     @UserID INT,
     @FirstName NVARCHAR(50),
     @LastName NVARCHAR(50),
@@ -86,32 +86,13 @@ GO
 -- SPRINT #2: CORE OPERATIONS STORED PROCEDURES
 -- =========================================================================
 
--- 0. Add a Single Notification
-IF OBJECT_ID(N'dbo.sp_AddNotification', N'P') IS NOT NULL
-    DROP PROCEDURE dbo.sp_AddNotification;
-GO
-
-CREATE PROCEDURE dbo.sp_AddNotification
-    @UserID INT,
-    @Title NVARCHAR(255),
-    @Message NVARCHAR(MAX),
-    @EventID INT = NULL
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    INSERT INTO [dbo].[Notifications] (UserID, Title, Message, RelatedEventID, Status)
-    VALUES (@UserID, @Title, @Message, @EventID, 'Pending');
-END;
-GO
-
 -- 1. Register for an Event (with Capacity Check)
 -- 1. Register for an Event (with Capacity Check & Concurrency Control)
 IF OBJECT_ID(N'dbo.sp_RegisterForEvent', N'P') IS NOT NULL
     DROP PROCEDURE dbo.sp_RegisterForEvent;
 GO
 
-CREATE PROCEDURE dbo.sp_RegisterForEvent
+CREATE OR ALTER PROCEDURE dbo.sp_RegisterForEvent
     @EventID INT,
     @UserID INT
 AS
@@ -215,7 +196,7 @@ IF OBJECT_ID(N'dbo.sp_UnregisterFromEvent', N'P') IS NOT NULL
     DROP PROCEDURE dbo.sp_UnregisterFromEvent;
 GO
 
-CREATE PROCEDURE dbo.sp_UnregisterFromEvent
+CREATE OR ALTER PROCEDURE dbo.sp_UnregisterFromEvent
     @EventID INT,
     @UserID INT
 AS
@@ -245,7 +226,7 @@ IF OBJECT_ID(N'dbo.sp_CreateTeam', N'P') IS NOT NULL
     DROP PROCEDURE dbo.sp_CreateTeam;
 GO
 
-CREATE PROCEDURE dbo.sp_CreateTeam
+CREATE OR ALTER PROCEDURE dbo.sp_CreateTeam
     @EventID INT,
     @TeamName NVARCHAR(100),
     @LeaderID INT
@@ -286,7 +267,7 @@ IF OBJECT_ID(N'dbo.sp_InviteTeamMember', N'P') IS NOT NULL
     DROP PROCEDURE dbo.sp_InviteTeamMember;
 GO
 
-CREATE PROCEDURE dbo.sp_InviteTeamMember
+CREATE OR ALTER PROCEDURE dbo.sp_InviteTeamMember
     @TeamID INT,
     @InvitedUserID INT
 AS
@@ -339,7 +320,7 @@ IF OBJECT_ID(N'dbo.sp_CancelEvent', N'P') IS NOT NULL
     DROP PROCEDURE dbo.sp_CancelEvent;
 GO
 
-CREATE PROCEDURE dbo.sp_CancelEvent
+CREATE OR ALTER PROCEDURE dbo.sp_CancelEvent
     @EventID INT
 AS
 BEGIN
@@ -382,27 +363,138 @@ BEGIN
 END;
 GO
 
-USE [EventDhondo];
+-- 6. Add a Single Notification
+IF OBJECT_ID(N'dbo.sp_AddNotification', N'P') IS NOT NULL
+    DROP PROCEDURE dbo.sp_AddNotification;
 GO
 
-ALTER PROCEDURE dbo.sp_UpdateStudentProfile
+CREATE OR ALTER PROCEDURE dbo.sp_AddNotification
     @UserID INT,
-    @FirstName NVARCHAR(50),
-    @LastName NVARCHAR(50),
-    @Department NVARCHAR(100),
-    @YearOfStudy INT,
-    @LinkedInURL NVARCHAR(255),
-    @GitHubURL NVARCHAR(255)
+    @Title NVARCHAR(255),
+    @Message NVARCHAR(MAX),
+    @EventID INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
-    UPDATE [dbo].[StudentProfiles]
-    SET FirstName = @FirstName,
-        LastName = @LastName,
-        Department = @Department,
-        YearOfStudy = @YearOfStudy,
-        LinkedInURL = @LinkedInURL,
-        GitHubURL = @GitHubURL
-    WHERE UserID = @UserID;
+
+    INSERT INTO [dbo].[Notifications] (UserID, Title, Message, RelatedEventID, Status)
+    VALUES (@UserID, @Title, @Message, @EventID, 'Pending');
+END;
+GO
+
+
+-- [OPERATIONS] Mark Attendance via QR Scan
+CREATE OR ALTER PROCEDURE sp_MarkAttendance
+    @QRCode NVARCHAR(255), @AdminID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @RegID INT = (SELECT RegistrationID FROM Registrations WHERE QRCode = @QRCode);
+    IF @RegID IS NULL THROW 50002, 'Invalid QR Code', 1;
+
+    INSERT INTO Attendance (RegistrationID, CheckInMethod, VerifiedBy) VALUES (@RegID, 'QR_Scan', @AdminID);
+    UPDATE Registrations SET Status = 'Attended' WHERE RegistrationID = @RegID;
+    SELECT 'Attendance Marked' AS Message;
+END;
+GO
+
+-- [FEEDBACK] Submit Review (Only if Attended)
+CREATE OR ALTER PROCEDURE sp_AddReview
+    @EventID INT, @UserID INT, @Rating INT, @Text NVARCHAR(MAX)
+AS
+BEGIN
+    DECLARE @AttID INT = (SELECT a.AttendanceID FROM Attendance a JOIN Registrations r ON a.RegistrationID = r.RegistrationID WHERE r.EventID = @EventID AND r.UserID = @UserID);
+    IF @AttID IS NULL THROW 50003, 'Must attend event to review', 1;
+    INSERT INTO EventReviews (EventID, UserID, AttendanceID, OverallRating, ReviewText) VALUES (@EventID, @UserID, @AttID, @Rating, @Text);
+END;
+GO
+
+-- [PORTFOLIO] Add Achievement (1st/2nd/3rd Place)
+CREATE OR ALTER PROCEDURE sp_AddAchievement
+    @UserID INT, @EventID INT, @Position NVARCHAR(50), @Desc NVARCHAR(MAX)
+AS
+BEGIN
+    INSERT INTO StudentAchievements (UserID, EventID, Position, AchievementDate, [Description])
+    VALUES (@UserID, @EventID, @Position, CAST(GETDATE() AS DATE), @Desc);
+    
+    EXEC sp_AddNotification @UserID, 'New Achievement!', 'You earned a position in an event!', @EventID;
+END;
+GO
+
+-- [AUTH] Register Organizer (Societies/Clubs)
+CREATE OR ALTER PROCEDURE sp_RegisterOrganizer
+    @Email NVARCHAR(100), @PasswordHash NVARCHAR(255), @OrgName NVARCHAR(150), @Desc NVARCHAR(MAX), @ContactEmail NVARCHAR(100)
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    BEGIN TRANSACTION;
+    BEGIN TRY
+        INSERT INTO [Users] (Email, PasswordHash, [Role], VerificationStatus) 
+        VALUES (@Email, @PasswordHash, 'Organizer', 'Pending'); -- Admin must verify
+        
+        DECLARE @NewUserID INT = SCOPE_IDENTITY();
+        INSERT INTO [OrganizerProfiles] (UserID, OrganizationName, [Description], ContactEmail) 
+        VALUES (@NewUserID, @OrgName, @Desc, @ContactEmail);
+        
+        COMMIT; SELECT @NewUserID AS NewUserID, 'Success' AS Message;
+    END TRY
+    BEGIN CATCH ROLLBACK; SELECT -1 AS NewUserID, ERROR_MESSAGE() AS Message; END CATCH
+END;
+GO
+
+-- [ADMIN] Verify Organizer (Feature 1)
+CREATE OR ALTER PROCEDURE sp_VerifyOrganizer
+    @OrganizerID INT, @Status NVARCHAR(10) -- 'Verified' or 'Rejected'
+AS
+BEGIN
+    UPDATE OrganizerProfiles SET VerificationStatus = @Status WHERE UserID = @OrganizerID;
+    UPDATE Users SET VerificationStatus = @Status WHERE UserID = @OrganizerID;
+END;
+GO
+
+-- [ADMIN] Reject Organizer Application with Optional Reason
+CREATE OR ALTER PROCEDURE sp_RejectOrganizer
+    @OrganizerID INT,
+    @RejectionReason NVARCHAR(MAX) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+        -- Update both OrganizerProfiles and Users tables to 'Rejected' status
+        UPDATE OrganizerProfiles 
+        SET VerificationStatus = 'Rejected'
+        WHERE UserID = @OrganizerID;
+
+        UPDATE Users 
+        SET VerificationStatus = 'Rejected'
+        WHERE UserID = @OrganizerID;
+
+        SELECT 'Success' AS Message, @OrganizerID AS OrganizerID, 'Rejected' AS NewStatus;
+    END TRY
+    BEGIN CATCH
+        SELECT 'Error: ' + ERROR_MESSAGE() AS Message;
+    END CATCH
+END;
+GO
+
+-- [RECS] Get Events Matching Student Interests
+CREATE OR ALTER PROCEDURE sp_GetRecommendedEvents
+    @UserID INT
+AS
+BEGIN
+    SELECT DISTINCT e.* FROM vw_UpcomingEvents e
+    JOIN EventTagMapping etm ON e.EventID = etm.EventID
+    JOIN Interests i ON etm.TagID = i.InterestID
+    JOIN UserInterests ui ON i.InterestID = ui.InterestID
+    WHERE ui.UserID = @UserID;
+END;
+GO
+
+-- [UTIL] Mark Notification as Read
+CREATE OR ALTER PROCEDURE sp_ReadNotification
+    @NotificationID BIGINT
+AS
+BEGIN
+    UPDATE Notifications SET Status = 'Read', ReadAt = SYSDATETIMEOFFSET() WHERE NotificationID = @NotificationID;
 END;
 GO

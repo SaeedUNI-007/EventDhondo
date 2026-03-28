@@ -1,4 +1,4 @@
-USE master;
+﻿USE master;
 GO
 
 IF DB_ID(N'EventDhondo') IS NOT NULL
@@ -63,8 +63,7 @@ CREATE TABLE [StudentProfiles] (
     [LastName] NVARCHAR(50) NOT NULL,
     [Department] NVARCHAR(100),
     [YearOfStudy] INT,
-    [DateOfBirth] DATE,
-    [ProfilePictureURL] NVARCHAR(MAX),
+    [ProfilePictureURL] NVARCHAR(255),
     FOREIGN KEY ([UserID]) REFERENCES [Users]([UserID]) ON DELETE CASCADE
 );
 
@@ -74,7 +73,7 @@ CREATE TABLE [OrganizerProfiles] (
     [OrganizationName] NVARCHAR(150) NOT NULL UNIQUE,
     [Description] NVARCHAR(MAX),
     [ContactEmail] NVARCHAR(100) NOT NULL,
-    [ProfilePictureURL] NVARCHAR(MAX),
+    [ProfilePictureURL] NVARCHAR(255),
     [VerificationStatus] NVARCHAR(10) NOT NULL DEFAULT 'Pending' CHECK ([VerificationStatus] IN ('Pending', 'Verified', 'Rejected')),
     FOREIGN KEY ([UserID]) REFERENCES [Users]([UserID]) ON DELETE CASCADE
 );
@@ -283,7 +282,7 @@ CREATE TABLE [Notifications] (
 CREATE TABLE [NotificationPreferences] (
     [UserID] INT NOT NULL,
     [NotificationType] NVARCHAR(50) NOT NULL,
-    [EmailEnabled] BIT NOT NULL DEFAULT 1, -- SQL Server uses BIT for boolean (1=true, 0=false)
+    [EmailEnabled] BIT NOT NULL DEFAULT 1,
     [InAppEnabled] BIT NOT NULL DEFAULT 1,
     PRIMARY KEY ([UserID], [NotificationType]),
     FOREIGN KEY ([UserID]) REFERENCES [Users]([UserID]) ON DELETE CASCADE
@@ -316,87 +315,3 @@ CREATE TABLE [ReviewResponses] (
     FOREIGN KEY ([ReviewID]) REFERENCES [EventReviews]([ReviewID]) ON DELETE CASCADE,
     FOREIGN KEY ([OrganizerID]) REFERENCES [Users]([UserID]) ON DELETE NO ACTION
 );
-
-USE [EventDhondo];
-GO
-
--- Add profile columns if they do not exist (safe for reruns)
-IF COL_LENGTH('dbo.StudentProfiles', 'DateOfBirth') IS NULL
-BEGIN
-    ALTER TABLE [StudentProfiles] ADD [DateOfBirth] DATE NULL;
-END
-GO
-
-IF COL_LENGTH('dbo.StudentProfiles', 'LinkedInURL') IS NULL
-BEGIN
-    ALTER TABLE [StudentProfiles] ADD [LinkedInURL] NVARCHAR(255) NULL;
-END
-GO
-
-IF COL_LENGTH('dbo.StudentProfiles', 'GitHubURL') IS NULL
-BEGIN
-    ALTER TABLE [StudentProfiles] ADD [GitHubURL] NVARCHAR(255) NULL;
-END
-GO
-
--- Widen profile picture columns for base64 data URLs
-IF EXISTS (
-    SELECT 1
-    FROM sys.columns c
-    JOIN sys.types t ON c.user_type_id = t.user_type_id
-    WHERE c.object_id = OBJECT_ID('dbo.StudentProfiles')
-      AND c.name = 'ProfilePictureURL'
-      AND t.name = 'nvarchar'
-      AND c.max_length <> -1
-)
-BEGIN
-    ALTER TABLE [StudentProfiles] ALTER COLUMN [ProfilePictureURL] NVARCHAR(MAX) NULL;
-END
-GO
-
-IF EXISTS (
-    SELECT 1
-    FROM sys.columns c
-    JOIN sys.types t ON c.user_type_id = t.user_type_id
-    WHERE c.object_id = OBJECT_ID('dbo.OrganizerProfiles')
-      AND c.name = 'ProfilePictureURL'
-      AND t.name = 'nvarchar'
-      AND c.max_length <> -1
-)
-BEGIN
-    ALTER TABLE [OrganizerProfiles] ALTER COLUMN [ProfilePictureURL] NVARCHAR(MAX) NULL;
-END
-GO
-
-
--- ========= 6. INDEXING FOR PERFORMANCE =========
-
--- For fast login
---CREATE INDEX IX_Users_Email ON [Users]([Email]);
-
----- For filtering events by date, status, and type
---CREATE INDEX IX_Events_Date ON [Events]([EventDate]);
---CREATE INDEX IX_Events_Status ON [Events]([Status]);
---CREATE CLUSTERED INDEX IX_Events_EventType_Date ON [Events]([EventType], [EventDate]);
-
----- For quickly finding registrations for a specific user or event
---CREATE INDEX IX_Registrations_UserID ON [Registrations]([UserID]);
---CREATE INDEX IX_Registrations_EventID ON [Registrations]([EventID]);
-
----- For finding achievements and reviews by user
---CREATE INDEX IX_Achievements_UserID ON [StudentAchievements]([UserID]);
---CREATE INDEX IX_Reviews_UserID ON [EventReviews]([UserID]);
-
-
--- NOTE ON FULL-TEXT SEARCH in SQL Server:
--- To implement full-text search on [Events]([Title], [Description]), you first need to ensure
--- the Full-Text Search feature is installed for your SQL Server instance.
--- Then, you would run commands similar to these:
-
--- 1. Create a Full-Text Catalog
--- CREATE FULLTEXT CATALOG ft_EventDhondo AS DEFAULT;
-
--- 2. Create a Full-Text Index on the Events table
--- CREATE FULLTEXT INDEX ON [Events]([Title], [Description])
--- KEY INDEX PK__Events__7944C810... -- You need to put the actual name of your primary key constraint here
--- ON ft_EventDhondo;

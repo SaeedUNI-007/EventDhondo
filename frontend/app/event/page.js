@@ -2,6 +2,8 @@
 import { useState } from "react";
 import Link from "next/link";
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+
 export default function EventRequestPage() {
   const [form, setForm] = useState({
     title: "",
@@ -15,78 +17,72 @@ export default function EventRequestPage() {
     posterURL: "",
   });
   const [msg, setMsg] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   const userId = typeof window !== "undefined"
     ? (sessionStorage.getItem("userId") || sessionStorage.getItem("userID") || localStorage.getItem("userId") || "anonymous")
     : "anonymous";
-  const role = typeof window !== "undefined"
-    ? (sessionStorage.getItem("userRole") || localStorage.getItem("userRole") || "organizer")
-    : "organizer";
 
   function handleChange(e) {
     const { name, value } = e.target;
     setForm(s => ({ ...s, [name]: value }));
   }
 
-  function persistRequest(request) {
-    const key = "eventRequests";
-    const existing = JSON.parse(localStorage.getItem(key) || "[]");
-    existing.push(request);
-    localStorage.setItem(key, JSON.stringify(existing));
-
-    const notesKey = "adminNotifications";
-    const notes = JSON.parse(localStorage.getItem(notesKey) || "[]");
-    notes.push({
-      id: Date.now(),
-      type: "EventCreationRequest",
-      title: request.title,
-      from: request.organizerId,
-      time: new Date().toISOString(),
-      requestId: request.id
-    });
-    localStorage.setItem(notesKey, JSON.stringify(notes));
-  }
-
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
 
-    // required fields per schema: Title, EventType, EventDate, EventTime, Capacity, RegistrationDeadline
-    if (!form.title || !form.eventType || !form.eventDate || !form.eventTime || !form.capacity || !form.registrationDeadline) {
-      setMsg("Fill required fields: Title, Type, Date, Time, Capacity, Registration deadline.");
+    // required fields per schema: Title, EventDate
+    if (!form.title || !form.eventDate) {
+      setMsg("Fill required fields: Title and Date at minimum.");
       return;
     }
 
-    const request = {
-      id: Date.now(),
-      organizerId: userId,
-      organizerRole: role,
-      title: form.title,
-      description: form.description,
-      eventType: form.eventType,
-      eventDate: form.eventDate,
-      eventTime: form.eventTime,
-      venue: form.venue,
-      capacity: parseInt(form.capacity, 10) || 0,
-      registrationDeadline: form.registrationDeadline,
-      posterURL: form.posterURL,
-      status: "Pending",
-      submittedAt: new Date().toISOString(),
-      adminNotes: ""
-    };
+    setIsLoading(true);
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (userId && userId !== 'anonymous') {
+        headers['x-user-id'] = userId;
+      }
 
-    persistRequest(request);
-    setMsg("Request submitted — sent to admin requests portal for approval.");
-    setForm({
-      title: "",
-      description: "",
-      eventType: "Workshop",
-      eventDate: "",
-      eventTime: "",
-      venue: "",
-      capacity: "",
-      registrationDeadline: "",
-      posterURL: "",
-    });
+      const response = await fetch(`${API_BASE_URL}/api/events/request`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          title: form.title,
+          description: form.description,
+          eventType: form.eventType,
+          eventDate: form.eventDate,
+          eventTime: form.eventTime,
+          venue: form.venue,
+          capacity: parseInt(form.capacity, 10) || 0,
+          registrationDeadline: form.registrationDeadline,
+          posterURL: form.posterURL,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || `Request failed with status ${response.status}`);
+      }
+
+      setMsg(`✓ Event request submitted! Request ID: ${data.requestId}. Admin will review and approve.`);
+      setForm({
+        title: "",
+        description: "",
+        eventType: "Workshop",
+        eventDate: "",
+        eventTime: "",
+        venue: "",
+        capacity: "",
+        registrationDeadline: "",
+        posterURL: "",
+      });
+    } catch (err) {
+      setMsg(`✗ Error: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   return (
@@ -150,7 +146,9 @@ export default function EventRequestPage() {
           </div>
 
           <div className="flex gap-3 items-center">
-            <button type="submit" className="cta px-5 py-2">Submit Request</button>
+            <button type="submit" disabled={isLoading} className="cta px-5 py-2 disabled:opacity-50 disabled:cursor-not-allowed">
+              {isLoading ? 'Submitting...' : 'Submit Request'}
+            </button>
             <div className="ml-4 w-44 shrink-0">
               <div className="p-3 bg-white rounded shadow-sm text-center">
                 <Link href="/dashboard" className="inline-block text-sm text-slate-600 hover:underline">
@@ -160,7 +158,7 @@ export default function EventRequestPage() {
             </div>
           </div>
 
-          {msg && <p className="text-sm text-[var(--brand-strong)]">{msg}</p>}
+          {msg && <p className={`text-sm ${msg.startsWith('✓') ? 'text-green-600' : 'text-red-600'}`}>{msg}</p>}
         </form>
       </div>
     </main>

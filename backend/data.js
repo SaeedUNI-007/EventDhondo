@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const { sql, poolPromise } = require('./db'); // Import everything ONCE at the top
-const { authenticateToken } = require('./middleware/auth');
+const { authMiddleware } = require('./middleware/auth'); // Import auth middleware
 
 // 1. GET Interests
 router.get('/interests', async (req, res) => {
@@ -77,9 +77,10 @@ router.get('/events', async (req, res) => {
 });
 
 // 2.1 POST Create Event (Organizer)
-router.post('/events', async (req, res) => {
+// Requires authentication - organizer can only create events for themselves
+router.post('/events', authMiddleware, async (req, res) => {
     const {
-        organizerId,
+        organizerId,  // Deprecated: ignored, use authenticated user ID
         title,
         description,
         eventType,
@@ -92,7 +93,17 @@ router.post('/events', async (req, res) => {
         status,
     } = req.body || {};
 
-    const parsedOrganizerId = Number(organizerId);
+    // Use authenticated user's ID instead of trusting client-provided organizerId
+    const parsedOrganizerId = req.user?.UserID;
+    
+    if (!parsedOrganizerId) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+
+    if (req.user?.Role !== 'Organizer') {
+        return res.status(403).json({ success: false, message: 'Only organizers can create events' });
+    }
+
     const parsedCapacity = Number(capacity);
     const normalizedTitle = String(title || '').trim();
     const normalizedType = String(eventType || '').trim();
@@ -262,17 +273,23 @@ router.post('/events', async (req, res) => {
 });
 
 // 2.2 POST Register for Event (Sprint 2)
-router.post('/events/register', async (req, res) => {
-    const { userId, eventId } = req.body;
+// Requires authentication - user can only register themselves
+router.post('/events/register', authMiddleware, async (req, res) => {
+    const { eventId } = req.body;
+    const userId = req.user?.UserID;
 
-    if (!Number.isInteger(Number(userId)) || !Number.isInteger(Number(eventId))) {
-        return res.status(400).json({ success: false, message: 'userId and eventId are required as integers' });
+    if (!userId) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+
+    if (!Number.isInteger(Number(eventId))) {
+        return res.status(400).json({ success: false, message: 'eventId is required as an integer' });
     }
 
     try {
         const pool = await poolPromise;
         const result = await pool.request()
-            .input('UserID', sql.Int, Number(userId))
+            .input('UserID', sql.Int, userId)
             .input('EventID', sql.Int, Number(eventId))
             .execute('dbo.sp_RegisterForEvent');
 
@@ -294,17 +311,23 @@ router.post('/events/register', async (req, res) => {
 });
 
 // 2.2b POST Unregister from Event (uses existing SQL proc)
-router.post('/events/unregister', async (req, res) => {
-    const { userId, eventId } = req.body;
+// Requires authentication - user can only unregister themselves
+router.post('/events/unregister', authMiddleware, async (req, res) => {
+    const { eventId } = req.body;
+    const userId = req.user?.UserID;
 
-    if (!Number.isInteger(Number(userId)) || !Number.isInteger(Number(eventId))) {
-        return res.status(400).json({ success: false, message: 'userId and eventId are required as integers' });
+    if (!userId) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+
+    if (!Number.isInteger(Number(eventId))) {
+        return res.status(400).json({ success: false, message: 'eventId is required as an integer' });
     }
 
     try {
         const pool = await poolPromise;
         const result = await pool.request()
-            .input('UserID', sql.Int, Number(userId))
+            .input('UserID', sql.Int, userId)
             .input('EventID', sql.Int, Number(eventId))
             .execute('dbo.sp_UnregisterFromEvent');
 
@@ -428,9 +451,15 @@ router.get('/notifications/:userId', async (req, res) => {
     }
 });
 
-router.delete('/events/:id', authenticateToken, async (req, res) => {
+// 2.1 DELETE Event (Organizer dashboard) - Changed to Soft Delete
+// Requires authentication - organizer can only delete their own events
+router.delete('/events/:id', authMiddleware, async (req, res) => {
     const eventId = Number(req.params.id);
-    const userId = req.user.userId; // Securely get ID from token
+    const userId = req.user?.UserID;
+
+    if (!userId) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
 
     if (!Number.isInteger(eventId) || eventId <= 0) {
         return res.status(400).json({ success: false, message: 'Invalid event id' });
@@ -439,55 +468,43 @@ router.delete('/events/:id', authenticateToken, async (req, res) => {
     try {
         const pool = await poolPromise;
 
-        // 1. OWNERSHIP CHECK (Must be done first!)
-        const check = await pool.request()
+        // Check if event exists and belongs to the organizer
+        const eventCheck = await pool.request()
             .input('EventID', sql.Int, eventId)
-            .query('SELECT OrganizerID FROM [dbo].[Events] WHERE EventID = @EventID');
-        
-        if (check.recordset.length === 0) {
+            .query('SELECT EventID, OrganizerID FROM Events WHERE EventID = @EventID');
+
+        const event = eventCheck.recordset?.[0];
+        if (!event) {
             return res.status(404).json({ success: false, message: 'Event not found' });
         }
-        
-        if (check.recordset[0].OrganizerID !== userId) {
-            return res.status(403).json({ success: false, message: "Unauthorized: You don't own this event" });
+
+        if (req.user?.Role !== 'Admin' && event.OrganizerID !== userId) {
+            return res.status(403).json({ success: false, message: 'You can only delete your own events' });
         }
 
-        // 2. ATTEMPT DELETE
-        try {
-            const result = await pool.request()
-                .input('EventID', sql.Int, eventId)
-                .input('OrganizerID', sql.Int, userId)
-                .query('DELETE FROM [dbo].[Events] WHERE EventID = @EventID AND OrganizerID = @OrganizerID');
+        // Use SOFT DELETE: Set Status to 'Cancelled' instead of hard delete
+        const result = await pool.request()
+            .input('EventID', sql.Int, eventId)
+            .query(`
+                UPDATE Events 
+                SET Status = 'Cancelled', UpdatedAt = SYSDATETIMEOFFSET()
+                WHERE EventID = @EventID
+            `);
 
-            if (result.rowsAffected[0] > 0) {
-                return res.json({ success: true, message: 'Event deleted successfully' });
-            }
-        } catch (deleteErr) {
-            // 3. ARCHIVE ON FK CONSTRAINT VIOLATION (Error 547)
-            if (deleteErr?.number === 547) {
-                await pool.request()
-                    .input('EventID', sql.Int, eventId)
-                    .input('OrganizerID', sql.Int, userId)
-                    .query("UPDATE [dbo].[Events] SET Status = 'Cancelled' WHERE EventID = @EventID AND OrganizerID = @OrganizerID");
-                
-                return res.json({
-                    success: true,
-                    softDeleted: true,
-                    message: 'Event has registrations, so it was archived as Cancelled.',
-                });
-            }
-            throw deleteErr; // Re-throw if it's a different error
+        if ((result.rowsAffected?.[0] || 0) === 0) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
         }
+
+        return res.json({ success: true, message: 'Event deleted successfully' });
     } catch (err) {
         console.error('Delete Event Error:', err);
         return res.status(500).json({ success: false, message: 'Failed to delete event' });
     }
 });
 
-// ... existing imports ...
-
 // 3. GET Profile (Updated to return LinkedIn/GitHub)
-router.get('/profile/:id', async (req, res) => {
+// Requires authentication - user can view any profile but data is limited
+router.get('/profile/:id', authMiddleware, async (req, res) => {
     const userId = Number(req.params.id);
     if (!Number.isInteger(userId) || userId <= 0) {
         return res.status(400).json({ success: false, message: 'Valid user id is required' });
@@ -549,10 +566,20 @@ router.get('/profile/:id', async (req, res) => {
 });
 
 // 4. PUT Profile (Updated to save LinkedIn/GitHub)
-router.put('/profile/:id', async (req, res) => {
-    if (req.user.userId !== Number(req.params.id)) {
-        return res.status(403).json({ success: false, message: "Unauthorized: You can only edit your own profile." });
+// Requires authentication - user can only edit their own profile
+router.put('/profile/:id', authMiddleware, async (req, res) => {
+    const targetUserId = Number(req.params.id);
+    const requestingUserId = req.user?.UserID;
+
+    // User can only edit their own profile, except admin
+    if (req.user?.Role !== 'Admin' && targetUserId !== requestingUserId) {
+        return res.status(403).json({ success: false, message: 'You can only edit your own profile' });
     }
+
+    if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+        return res.status(400).json({ success: false, message: 'Valid user id is required' });
+    }
+
     const {
         role,
         firstName,
@@ -569,10 +596,7 @@ router.put('/profile/:id', async (req, res) => {
         contactEmail,
     } = req.body;
 
-    const userId = Number(req.params.id);
-    if (!Number.isInteger(userId) || userId <= 0) {
-        return res.status(400).json({ success: false, message: 'Valid user id is required' });
-    }
+    const userId = targetUserId;
 
     try {
         const pool = await poolPromise;
@@ -651,20 +675,66 @@ router.put('/profile/:id', async (req, res) => {
         }
         res.json({ success: true, role: 'Student' });
     } catch (err) {
-        res.status(500).send(err.message);
+        console.error('Update Profile Error:', err);
+        res.status(500).json({ success: false, message: 'Failed to update profile' });
     }
 });
 
-// 5. PUT Admin Verification
-router.put('/admin/verify-organizer/:id', async (req, res) => {
+// 10. POST Event Request (Student submits event suggestion)
+// Requires authentication
+router.post('/events/request', authMiddleware, async (req, res) => {
+    const userId = req.user?.UserID;
+    if (!userId) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+
+    const {
+        title,
+        description,
+        eventType,
+        eventDate,
+        eventTime,
+        venue,
+        capacity,
+        registrationDeadline,
+        posterURL,
+    } = req.body;
+
+    // Validate required fields
+    if (!title) {
+        return res.status(400).json({ success: false, message: 'Event title is required' });
+    }
+
+    if (!eventDate) {
+        return res.status(400).json({ success: false, message: 'Event date is required' });
+    }
+
     try {
         const pool = await poolPromise;
-        await pool.request()
-            .input('UserID', sql.Int, req.params.id)
-            .query(`UPDATE OrganizerProfiles SET VerificationStatus = 'Verified' WHERE UserID = @UserID`);
-        res.json({ success: true });
+
+        // Insert event request into EventRequests table
+        const insertResult = await pool.request()
+            .input('StudentID', sql.Int, userId)
+            .input('Title', sql.NVarChar(200), title)
+            .input('Description', sql.NVarChar(sql.MAX), description || null)
+            .input('SuggestedDate', sql.Date, eventDate)
+            .query(`
+                INSERT INTO EventRequests (StudentID, Title, Description, SuggestedDate, Status, SubmittedAt)
+                VALUES (@StudentID, @Title, @Description, @SuggestedDate, 'Pending', SYSDATETIMEOFFSET());
+                SELECT SCOPE_IDENTITY() AS RequestID
+            `);
+
+        const requestId = insertResult.recordset[0].RequestID;
+
+        res.json({
+            success: true,
+            message: 'Event request submitted successfully',
+            requestId,
+            status: 'Pending',
+        });
     } catch (err) {
-        res.status(500).send(err.message);
+        console.error('Submit Event Request Error:', err);
+        res.status(500).json({ success: false, message: 'Failed to submit event request' });
     }
 });
 

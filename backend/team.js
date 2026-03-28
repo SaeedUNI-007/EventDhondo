@@ -2,6 +2,10 @@
 const express = require('express');
 const router = express.Router();
 const { sql, poolPromise } = require('./db');
+const { authMiddleware, organizerMiddleware } = require('./middleware/auth');
+
+// All team routes require authentication
+router.use(authMiddleware);
 
 router.post('/create', async (req, res) => {
     const { eventId, teamName, leaderId } = req.body;

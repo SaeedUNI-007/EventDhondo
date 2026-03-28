@@ -40,11 +40,19 @@ export default function AdminEventsPage() {
   useEffect(() => {
     const loadEvents = async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/api/events`);
+        setNotice("");
+        const userId = typeof window !== 'undefined' ? sessionStorage.getItem('userID') : null;
+
+        const headers = { 'Content-Type': 'application/json' };
+        if (userId) {
+          headers['x-user-id'] = userId;
+        }
+
+        const res = await fetch(`${API_BASE_URL}/api/events`, { headers });
         const data = await res.json();
         if (!res.ok || !Array.isArray(data)) {
           setEvents(FALLBACK_EVENTS);
-          setNotice("Using mock events because events API response is unavailable.");
+          setNotice("Using mock events because events API response returned: " + res.status);
           return;
         }
 
@@ -59,7 +67,7 @@ export default function AdminEventsPage() {
         setEvents(normalized);
       } catch (_err) {
         setEvents(FALLBACK_EVENTS);
-        setNotice("Using mock events due to API connectivity issues.");
+        setNotice("Using mock events due to API connectivity issues: " + _err.message);
       }
     };
 
@@ -79,10 +87,32 @@ export default function AdminEventsPage() {
     });
   }, [events, search, statusFilter]);
 
-  const handleCancelEvent = (eventRow) => {
+  const handleCancelEvent = async (eventRow) => {
     const ok = window.confirm(`Cancel event: ${eventRow.Title}?`);
     if (!ok) return;
-    window.alert("Cancel flow is UI-ready. Connect this to PUT /api/admin/cancel-event later.");
+
+    try {
+      const userId = typeof window !== 'undefined' ? sessionStorage.getItem('userID') : null;
+
+      const headers = { 'Content-Type': 'application/json' };
+      if (userId) {
+        headers['x-user-id'] = userId;
+      }
+
+      const res = await fetch(`${API_BASE_URL}/api/events/${encodeURIComponent(eventRow.EventID)}`, {
+        method: "DELETE",
+        headers,
+      });
+
+      if (!res.ok) {
+        throw new Error("Cancel failed: " + res.status);
+      }
+
+      setEvents((prev) => prev.filter((e) => Number(e.EventID) !== Number(eventRow.EventID)));
+      setNotice("Event cancelled successfully.");
+    } catch (err) {
+      window.alert("Cancel failed: " + err.message);
+    }
   };
 
   return (

@@ -6,13 +6,15 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 // 1. IMPORT DATABASE CONNECTION
 const { poolPromise } = require('./db');
-const { authenticateToken, authorizeRole } = require('./middleware/auth');
 
 // 2. IMPORT ROUTE FILES
 const authRoutes = require('./auth');
 const dataRoutes = require('./data');
 const teamRoutes = require('./team');
-const adminRoutes = require('./admin');
+const adminRoutes = require('./routes/admin'); // NEW: Import admin routes
+
+// 3. IMPORT MIDDLEWARE
+const { authMiddleware } = require('./middleware/auth');
 
 const app = express();
 
@@ -20,19 +22,19 @@ const app = express();
 const requestBodyLimit = process.env.REQUEST_BODY_LIMIT || '10mb';
 app.use(express.json({ limit: requestBodyLimit }));
 app.use(express.urlencoded({ extended: true, limit: requestBodyLimit }));
-app.use(cors());
-app.use('/api/admin', authenticateToken, authorizeRole('Admin'), adminRoutes); // PROTECTED
-app.use('/api/events/register', authenticateToken, dataRoutes); // PROTECTED
+
+// CORS Configuration - Restrict to allowed origins
+const corsOptions = {
+    origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000', 'http://localhost:3001'],
+    credentials: true,
+};
+app.use(cors(corsOptions));
 
 // 3. REGISTER YOUR NEW ROUTES
-app.use('/api/auth', authRoutes); // Auth uses /api/auth/login, etc.
-app.use('/api', dataRoutes);      // This makes /api/interests available!
-
-// B. Protected Routes (Requiring Token)
-app.use('/api/events/register', authenticateToken, dataRoutes); // If you have register here, keep it
-app.use('/api/profile', authenticateToken, dataRoutes);         // Profile needs the token
-app.use('/api/teams', authenticateToken, teamRoutes);
-app.use('/api/admin', authenticateToken, authorizeRole('Admin'), adminRoutes);
+app.use('/api/auth', authRoutes);           // All routes in auth.js will start with /api/auth
+app.use('/api', dataRoutes);                // All routes in data.js will start with /api
+app.use('/api/teams', authMiddleware, teamRoutes); // Teams require authentication
+app.use('/api/admin', adminRoutes);         // Admin routes (auth required in admin.js)
 
 // 4. TEST ROUTE: GET ALL USERS (Refactored to use the new poolPromise)
 app.get('/api/users', async (req, res) => {

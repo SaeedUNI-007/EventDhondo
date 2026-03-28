@@ -30,46 +30,26 @@ export default function OrganizerVerificationPage() {
     const loadPending = async () => {
       try {
         setStatus("");
-        const usersRes = await fetch(`${API_BASE_URL}/api/users`);
-        if (!usersRes.ok) {
+        const userId = typeof window !== 'undefined' ? sessionStorage.getItem('userID') : null;
+
+        const headers = { 'Content-Type': 'application/json' };
+        if (userId) {
+          headers['x-user-id'] = userId;
+        }
+
+        const requestsRes = await fetch(`${API_BASE_URL}/api/admin/requests`, { headers });
+        if (!requestsRes.ok) {
           setOrganizers(FALLBACK_PENDING_ORGANIZERS);
-          setStatus("Using mock organizers because users endpoint is not available.");
+          setStatus("Using mock organizers because admin requests endpoint returned: " + requestsRes.status);
           return;
         }
 
-        const users = await usersRes.json();
-        const organizerUsers = Array.isArray(users)
-          ? users.filter((u) => String(u.Role || "").toLowerCase() === "organizer")
-          : [];
-
-        const profileRows = await Promise.all(
-          organizerUsers.map(async (u) => {
-            const id = Number(u.UserID);
-            if (!Number.isInteger(id) || id <= 0) return null;
-
-            const profileRes = await fetch(`${API_BASE_URL}/api/profile/${encodeURIComponent(id)}`);
-            if (!profileRes.ok) return null;
-
-            const profile = await profileRes.json();
-            if (String(profile?.VerificationStatus || "").toLowerCase() !== "pending") {
-              return null;
-            }
-
-            return {
-              UserID: id,
-              OrganizationName: profile.OrganizationName || `Organizer ${id}`,
-              ContactEmail: profile.ContactEmail || u.Email || "-",
-              Description: profile.Description || "",
-              RequestedDate: profile.CreatedAt ? String(profile.CreatedAt).slice(0, 10) : "-",
-            };
-          })
-        );
-
-        const pendingRows = profileRows.filter(Boolean);
+        const data = await requestsRes.json();
+        const pendingRows = Array.isArray(data) ? data : [];
         setOrganizers(pendingRows);
       } catch (_err) {
         setOrganizers(FALLBACK_PENDING_ORGANIZERS);
-        setStatus("Using mock organizers due to API connectivity issues.");
+        setStatus("Using mock organizers due to API connectivity issues: " + _err.message);
       }
     };
 
@@ -85,17 +65,26 @@ export default function OrganizerVerificationPage() {
   const handleApprove = async (id) => {
     setRowLoading(id, true);
     try {
+      const userId = typeof window !== 'undefined' ? sessionStorage.getItem('userID') : null;
+
+      const headers = { 'Content-Type': 'application/json' };
+      if (userId) {
+        headers['x-user-id'] = userId;
+      }
+
       const res = await fetch(`${API_BASE_URL}/api/admin/verify-organizer/${encodeURIComponent(id)}`, {
         method: "PUT",
+        headers,
+        body: JSON.stringify({ status: 'Verified' }),
       });
 
       if (!res.ok) {
-        throw new Error("Approve failed");
+        throw new Error("Approve failed: " + res.status);
       }
 
       setOrganizers((prev) => prev.filter((item) => Number(item.UserID) !== Number(id)));
     } catch (_err) {
-      setStatus("Approve API not available right now. Row kept for UI demo.");
+      setStatus("Approve failed: " + _err.message);
     } finally {
       setRowLoading(id, false);
     }
@@ -104,8 +93,32 @@ export default function OrganizerVerificationPage() {
   const handleReject = async (id) => {
     setRowLoading(id, true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      const reason = prompt('Enter reason for rejection:');
+      if (!reason) {
+        setRowLoading(id, false);
+        return;
+      }
+
+      const userId = typeof window !== 'undefined' ? sessionStorage.getItem('userID') : null;
+
+      const headers = { 'Content-Type': 'application/json' };
+      if (userId) {
+        headers['x-user-id'] = userId;
+      }
+
+      const res = await fetch(`${API_BASE_URL}/api/admin/verify-organizer/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ status: 'Rejected', reason }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Reject failed: " + res.status);
+      }
+
       setOrganizers((prev) => prev.filter((item) => Number(item.UserID) !== Number(id)));
+    } catch (_err) {
+      setStatus("Reject failed: " + _err.message);
     } finally {
       setRowLoading(id, false);
     }

@@ -1,17 +1,4 @@
-/*
-=============================================================================
-EVENTDHONDO - DELIVERABLE II: QUERIES FOR FEATURES
-Project: Campus Event Discovery & Achievement Portfolio Platform
-=============================================================================
-This file contains all essential queries used to drive the application logic,
-from User Authentication to the Analytics Dashboard.
-*/
-
--- ==========================================================================
--- MODULE 1: USER AUTHENTICATION & PROFILE
--- ==========================================================================
-
--- 1.1 Verify User Login (Used on Login Page)
+﻿-- 1.1 Verify User Login (Used on Login Page)
 SELECT UserID, Email, [Role], VerificationStatus 
 FROM Users 
 WHERE Email = 'hamid@university.edu.pk' AND PasswordHash = 'password123';
@@ -29,10 +16,6 @@ FROM Interests i
 JOIN UserInterests ui ON i.InterestID = ui.InterestID
 WHERE ui.UserID = 4;
 
-
--- ==========================================================================
--- MODULE 2: EVENT DISCOVERY (SEARCH, FILTER, SORT)
--- ==========================================================================
 
 -- 2.1 Basic Dashboard View (Fetch all upcoming published events)
 SELECT * FROM vw_UpcomingEvents 
@@ -65,11 +48,6 @@ LEFT JOIN Registrations r ON e.EventID = r.EventID
 GROUP BY e.EventID, e.Title
 ORDER BY ParticipantCount DESC;
 
-
--- ==========================================================================
--- MODULE 3: REGISTRATION & TEAM MANAGEMENT
--- ==========================================================================
-
 -- 3.1 Check Event Capacity (Used before allowing a user to click 'Register')
 -- Shows total seats vs taken seats
 SELECT Title, Capacity,
@@ -90,10 +68,6 @@ JOIN TeamMembers tm ON t.TeamID = tm.TeamID
 JOIN StudentProfiles s ON tm.UserID = s.UserID
 WHERE t.EventID = 1;
 
-
--- ==========================================================================
--- MODULE 4: ATTENDANCE & ACHIEVEMENT PORTFOLIO
--- ==========================================================================
 
 -- 4.1 Verify QR Code Scan (Used by Organizer during check-in)
 SELECT r.RegistrationID, s.FirstName, s.LastName
@@ -118,10 +92,6 @@ WHERE r.UserID = 4
 GROUP BY s.SkillName, s.Category;
 
 
--- ==========================================================================
--- MODULE 5: NOTIFICATIONS & FEEDBACK
--- ==========================================================================
-
 -- 5.1 Fetch Unread Notifications (Used for the Notification Bell icon)
 SELECT Title, Message, CreatedAt
 FROM Notifications
@@ -139,10 +109,6 @@ FROM EventReviews er
 JOIN StudentProfiles s ON er.UserID = s.UserID
 WHERE er.EventID = 1;
 
-
--- ==========================================================================
--- MODULE 6: ADMIN & ORGANIZER ANALYTICS
--- ==========================================================================
 
 -- 6.1 Top 5 Most Active Students (Leaderboard)
 SELECT TOP 5 s.FirstName, s.LastName, COUNT(a.AttendanceID) AS EventsAttended
@@ -168,21 +134,6 @@ FROM EventCategories c
 JOIN EventCategoryMapping ecm ON c.CategoryID = ecm.CategoryID
 GROUP BY c.CategoryName;
 
--- ==========================================================================
--- END OF QUERIES
--- ==========================================================================
-
-/*
-=============================================================================
-EVENTDHONDO - DELIVERABLE II: QUERIES FOR FEATURES
-=============================================================================
-This file contains the SQL logic for every major feature on the website.
-Note: Many queries use the 'vw_UpcomingEvents' view for simplicity.
-*/
-
--- ==========================================================================
--- MODULE 1: USER AUTHENTICATION & PROFILE
--- ==========================================================================
 
 -- 1.1 Login Check
 -- Checks if the email exists and matches the password hash
@@ -206,11 +157,6 @@ EXEC sp_UpdateStudentProfile
     @Department = 'Computer Science', 
     @YearOfStudy = 2;
 
-
--- ==========================================================================
--- MODULE 2: EVENT DISCOVERY (SEARCH & FILTERING)
--- ==========================================================================
-
 -- 2.1 Main Dashboard View
 -- Retrieves data from the pre-defined View
 SELECT * FROM vw_UpcomingEvents;
@@ -233,10 +179,6 @@ FROM Events
 WHERE EventID = 1;
 
 
--- ==========================================================================
--- MODULE 3: STUDENT PORTFOLIO & HISTORY
--- ==========================================================================
-
 -- 3.1 Personal Event History
 -- Shows the student every event they have registered for
 SELECT e.Title, e.EventDate, r.Status
@@ -252,10 +194,6 @@ FROM StudentAchievements sa
 JOIN Events e ON sa.EventID = e.EventID
 WHERE sa.UserID = 4;
 
-
--- ==========================================================================
--- MODULE 4: ADMIN & ORGANIZER INSIGHTS
--- ==========================================================================
 
 -- 4.1 Popularity Analytics
 -- Ranks events by registration count to see what's trending

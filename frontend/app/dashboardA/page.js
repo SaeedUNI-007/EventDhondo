@@ -43,7 +43,14 @@ export default function AdminOverviewPage() {
     const load = async () => {
       try {
         setError("");
-        const statsRes = await fetch(`${API_BASE_URL}/api/admin/stats`);
+        const userId = typeof window !== 'undefined' ? sessionStorage.getItem('userID') : null;
+
+        const headers = { 'Content-Type': 'application/json' };
+        if (userId) {
+          headers['x-user-id'] = userId;
+        }
+
+        const statsRes = await fetch(`${API_BASE_URL}/api/admin/stats`, { headers });
         if (statsRes.ok) {
           const data = await statsRes.json();
           setStats({
@@ -53,10 +60,10 @@ export default function AdminOverviewPage() {
             totalRegistrations: Number(data.totalRegistrations ?? FALLBACK_STATS.totalRegistrations),
           });
         } else {
-          setError("Using fallback stats because admin stats endpoint is not available yet.");
+          setError("Using fallback stats because admin stats endpoint returned: " + statsRes.status);
         }
 
-        const activityRes = await fetch(`${API_BASE_URL}/api/admin/recent-activity`);
+        const activityRes = await fetch(`${API_BASE_URL}/api/admin/recent-activity`, { headers });
         if (activityRes.ok) {
           const rows = await activityRes.json();
           if (Array.isArray(rows) && rows.length > 0) {
@@ -64,7 +71,7 @@ export default function AdminOverviewPage() {
           }
         }
       } catch (_err) {
-        setError("Using fallback data due to API connectivity issues.");
+        setError("Using fallback data due to API connectivity issues: " + _err.message);
       }
     };
 

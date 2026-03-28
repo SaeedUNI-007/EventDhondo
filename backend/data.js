@@ -755,21 +755,4 @@ router.get('/organizer/registrations/:eventId', async (req, res) => {
     }
 });
 
-router.post('/events/request', authenticateToken, async (req, res) => {
-    const { title, description, suggestedDate } = req.body;
-    try {
-        const pool = await poolPromise;
-        await pool.request()
-            .input('StudentID', sql.Int, req.user.userId) // Uses JWT, not body
-            .input('Title', sql.NVarChar, title)
-            .input('Description', sql.NVarChar, description)
-            .input('SuggestedDate', sql.Date, suggestedDate)
-            .query(`INSERT INTO [dbo].[EventRequests] (StudentID, Title, Description, SuggestedDate, Status) 
-                    VALUES (@StudentID, @Title, @Description, @SuggestedDate, 'Pending')`);
-        res.json({ success: true, message: "Request submitted" });
-    } catch (err) {
-        res.status(500).send(err.message);
-    }
-});
-
 module.exports = router;

@@ -39,6 +39,7 @@ export default function Login() {
 
         // Scoped profile cache can remain in localStorage.
         localStorage.setItem(`userEmail:${resolvedUserId}`, email);
+        localStorage.setItem('token', data.token);
         const guessedName = email.split('@')[0].replace(/[._-]+/g, ' ');
         const titleCaseName = guessedName.replace(/\b\w/g, (c) => c.toUpperCase());
         const safeDisplayName = titleCaseName || 'Student';

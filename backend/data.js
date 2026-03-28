@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const { sql, poolPromise } = require('./db'); // Import everything ONCE at the top
+const { authenticateToken } = require('./middleware/auth');
 
 // 1. GET Interests
 router.get('/interests', async (req, res) => {
@@ -427,10 +428,9 @@ router.get('/notifications/:userId', async (req, res) => {
     }
 });
 
-// 2.1 DELETE Event (Organizer dashboard)
-router.delete('/events/:id', async (req, res) => {
+router.delete('/events/:id', authenticateToken, async (req, res) => {
     const eventId = Number(req.params.id);
-    const organizerId = Number(req.query.organizerId || req.body?.organizerId || 0);
+    const userId = req.user.userId; // Securely get ID from token
 
     if (!Number.isInteger(eventId) || eventId <= 0) {
         return res.status(400).json({ success: false, message: 'Invalid event id' });
@@ -438,46 +438,45 @@ router.delete('/events/:id', async (req, res) => {
 
     try {
         const pool = await poolPromise;
-        const deleteRequest = pool.request().input('EventID', sql.Int, eventId);
-        const hasOrganizer = Number.isInteger(organizerId) && organizerId > 0;
 
-        let deleteSql = 'DELETE FROM Events WHERE EventID = @EventID';
-        if (hasOrganizer) {
-            deleteRequest.input('OrganizerID', sql.Int, organizerId);
-            deleteSql += ' AND OrganizerID = @OrganizerID';
+        // 1. OWNERSHIP CHECK (Must be done first!)
+        const check = await pool.request()
+            .input('EventID', sql.Int, eventId)
+            .query('SELECT OrganizerID FROM [dbo].[Events] WHERE EventID = @EventID');
+        
+        if (check.recordset.length === 0) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+        
+        if (check.recordset[0].OrganizerID !== userId) {
+            return res.status(403).json({ success: false, message: "Unauthorized: You don't own this event" });
         }
 
+        // 2. ATTEMPT DELETE
         try {
-            const result = await deleteRequest.query(deleteSql);
-            if ((result.rowsAffected?.[0] || 0) === 0) {
-                return res.status(404).json({ success: false, message: 'Event not found' });
+            const result = await pool.request()
+                .input('EventID', sql.Int, eventId)
+                .input('OrganizerID', sql.Int, userId)
+                .query('DELETE FROM [dbo].[Events] WHERE EventID = @EventID AND OrganizerID = @OrganizerID');
+
+            if (result.rowsAffected[0] > 0) {
+                return res.json({ success: true, message: 'Event deleted successfully' });
             }
-            return res.json({ success: true, message: 'Event deleted successfully' });
         } catch (deleteErr) {
-            // If historical tables reference the event, archive it instead of hard-delete.
+            // 3. ARCHIVE ON FK CONSTRAINT VIOLATION (Error 547)
             if (deleteErr?.number === 547) {
-                const archiveRequest = pool.request()
+                await pool.request()
                     .input('EventID', sql.Int, eventId)
-                    .input('Status', sql.NVarChar(20), 'Cancelled');
-
-                let archiveSql = 'UPDATE Events SET Status = @Status WHERE EventID = @EventID';
-                if (hasOrganizer) {
-                    archiveRequest.input('OrganizerID', sql.Int, organizerId);
-                    archiveSql += ' AND OrganizerID = @OrganizerID';
-                }
-
-                const archived = await archiveRequest.query(archiveSql);
-                if ((archived.rowsAffected?.[0] || 0) === 0) {
-                    return res.status(404).json({ success: false, message: 'Event not found' });
-                }
-
+                    .input('OrganizerID', sql.Int, userId)
+                    .query("UPDATE [dbo].[Events] SET Status = 'Cancelled' WHERE EventID = @EventID AND OrganizerID = @OrganizerID");
+                
                 return res.json({
                     success: true,
                     softDeleted: true,
-                    message: 'Event has registrations/achievements, so it was archived as Cancelled instead of hard-deleted.',
+                    message: 'Event has registrations, so it was archived as Cancelled.',
                 });
             }
-            throw deleteErr;
+            throw deleteErr; // Re-throw if it's a different error
         }
     } catch (err) {
         console.error('Delete Event Error:', err);
@@ -551,6 +550,9 @@ router.get('/profile/:id', async (req, res) => {
 
 // 4. PUT Profile (Updated to save LinkedIn/GitHub)
 router.put('/profile/:id', async (req, res) => {
+    if (req.user.userId !== Number(req.params.id)) {
+        return res.status(403).json({ success: false, message: "Unauthorized: You can only edit your own profile." });
+    }
     const {
         role,
         firstName,
@@ -661,6 +663,40 @@ router.put('/admin/verify-organizer/:id', async (req, res) => {
             .input('UserID', sql.Int, req.params.id)
             .query(`UPDATE OrganizerProfiles SET VerificationStatus = 'Verified' WHERE UserID = @UserID`);
         res.json({ success: true });
+    } catch (err) {
+        res.status(500).send(err.message);
+    }
+});
+
+// GET Registrations for a specific Event (Organizer side)
+router.get('/organizer/registrations/:eventId', async (req, res) => {
+    try {
+        const pool = await poolPromise;
+        // Verify owner first if you have time, otherwise simple fetch:
+        const result = await pool.request()
+            .input('EventID', sql.Int, req.params.eventId)
+            .query(`SELECT r.*, u.Email 
+                    FROM [dbo].[Registrations] r
+                    JOIN [dbo].[Users] u ON r.UserID = u.UserID
+                    WHERE r.EventID = @EventID`);
+        res.json(result.recordset);
+    } catch (err) {
+        res.status(500).send(err.message);
+    }
+});
+
+router.post('/events/request', authenticateToken, async (req, res) => {
+    const { title, description, suggestedDate } = req.body;
+    try {
+        const pool = await poolPromise;
+        await pool.request()
+            .input('StudentID', sql.Int, req.user.userId) // Uses JWT, not body
+            .input('Title', sql.NVarChar, title)
+            .input('Description', sql.NVarChar, description)
+            .input('SuggestedDate', sql.Date, suggestedDate)
+            .query(`INSERT INTO [dbo].[EventRequests] (StudentID, Title, Description, SuggestedDate, Status) 
+                    VALUES (@StudentID, @Title, @Description, @SuggestedDate, 'Pending')`);
+        res.json({ success: true, message: "Request submitted" });
     } catch (err) {
         res.status(500).send(err.message);
     }

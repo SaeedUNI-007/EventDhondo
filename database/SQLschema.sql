@@ -15,30 +15,30 @@ USE [EventDhondo];
 GO
 
 
-DROP TABLE IF EXISTS [ReviewResponses];
-DROP TABLE IF EXISTS [EventReviews];
-DROP TABLE IF EXISTS [NotificationPreferences];
-DROP TABLE IF EXISTS [Notifications];
-DROP TABLE IF EXISTS [Certificates];
-DROP TABLE IF EXISTS [StudentAchievements];
-DROP TABLE IF EXISTS [EventSkillMapping];
-DROP TABLE IF EXISTS [Skills];
-DROP TABLE IF EXISTS [TeamMembers];
-DROP TABLE IF EXISTS [Teams];
-DROP TABLE IF EXISTS [Attendance];
-DROP TABLE IF EXISTS [RegistrationWaitlist];
-DROP TABLE IF EXISTS [Registrations];
-DROP TABLE IF EXISTS [EventRequests];
-DROP TABLE IF EXISTS [EventTagMapping];
-DROP TABLE IF EXISTS [EventTags];
-DROP TABLE IF EXISTS [EventCategoryMapping];
-DROP TABLE IF EXISTS [EventCategories];
-DROP TABLE IF EXISTS [Events];
-DROP TABLE IF EXISTS [UserInterests];
-DROP TABLE IF EXISTS [Interests];
-DROP TABLE IF EXISTS [OrganizerProfiles];
-DROP TABLE IF EXISTS [StudentProfiles];
-DROP TABLE IF EXISTS [Users];
+DROP TABLE [ReviewResponses];
+DROP TABLE [EventReviews];
+DROP TABLE [NotificationPreferences];
+DROP TABLE [Notifications];
+DROP TABLE [Certificates];
+DROP TABLE [StudentAchievements];
+DROP TABLE [EventSkillMapping];
+DROP TABLE [Skills];
+DROP TABLE [TeamMembers];
+DROP TABLE [Teams];
+DROP TABLE [Attendance];
+DROP TABLE [RegistrationWaitlist];
+DROP TABLE [Registrations];
+DROP TABLE [EventRequests];
+DROP TABLE [EventTagMapping];
+DROP TABLE [EventTags];
+DROP TABLE [EventCategoryMapping];
+DROP TABLE [EventCategories];
+DROP TABLE [Events];
+DROP TABLE [UserInterests];
+DROP TABLE [Interests];
+DROP TABLE [OrganizerProfiles];
+DROP TABLE [StudentProfiles];
+DROP TABLE [Users];
 
 GO
 

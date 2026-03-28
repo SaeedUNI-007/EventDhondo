@@ -5,7 +5,7 @@ USE [EventDhondo];
 GO
 
 -- 1. Main Dashboard View (Already exists, updated to include Organizer Logo)
-CREATE OR ALTER VIEW vw_UpcomingEvents AS
+ALTER VIEW vw_UpcomingEvents AS
 SELECT 
     e.EventID, e.Title, e.Description, e.EventType, e.EventDate, e.EventTime, e.Venue, e.Capacity, e.Status, e.PosterURL,
     o.OrganizationName AS Organizer, o.ProfilePictureURL AS OrganizerLogo,
@@ -17,7 +17,7 @@ WHERE e.Status = 'Published' AND e.EventDate >= CAST(GETDATE() AS DATE);
 GO
 
 -- 2. Student Portfolio View (For Feature 6)
-CREATE OR ALTER VIEW vw_StudentPortfolio AS
+CREATE VIEW vw_StudentPortfolio AS
 SELECT 
     s.UserID, s.FirstName, s.LastName,
     COUNT(DISTINCT r.EventID) AS TotalEventsAttended,
@@ -28,7 +28,7 @@ GROUP BY s.UserID, s.FirstName, s.LastName;
 GO
 
 -- 3. Event Analytics View (For Feature 10)
-CREATE OR ALTER VIEW vw_EventPerformance AS
+CREATE VIEW vw_EventPerformance AS
 SELECT 
     e.EventID, e.Title,
     COUNT(r.RegistrationID) AS TotalRegistered,
@@ -41,7 +41,7 @@ GROUP BY e.EventID, e.Title;
 GO
 
 
-CREATE OR ALTER VIEW vw_AdminPendingVerification AS
+CREATE VIEW vw_AdminPendingVerification AS
 SELECT 
     u.UserID, 
     u.Email, 
@@ -54,7 +54,7 @@ WHERE u.VerificationStatus = 'Pending' AND u.Role = 'Organizer';
 GO
 
 
-CREATE OR ALTER VIEW vw_TeamRosters AS
+CREATE VIEW vw_TeamRosters AS
 SELECT 
     t.EventID,
     t.TeamName,
@@ -67,7 +67,7 @@ JOIN StudentProfiles sp ON tm.UserID = sp.UserID;
 GO
 
 
-CREATE OR ALTER VIEW vw_OrganizerReputation AS
+CREATE VIEW vw_OrganizerReputation AS
 SELECT 
     op.UserID AS OrganizerID,
     op.OrganizationName,
@@ -81,7 +81,7 @@ GROUP BY op.UserID, op.OrganizationName;
 GO
 
 
-CREATE OR ALTER VIEW vw_DetailedAchievementPortfolio AS
+CREATE VIEW vw_DetailedAchievementPortfolio AS
 SELECT 
     sa.UserID,
     e.Title AS EventTitle,

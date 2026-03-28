@@ -1,4 +1,5 @@
 // routes/auth.js
+const jwt = require('jsonwebtoken');
 const express = require('express');
 const router = express.Router();
 const { sql, poolPromise } = require('./db');
@@ -131,21 +132,26 @@ router.post('/register', async (req, res) => {
                         INSERT INTO OrganizerProfiles (UserID, OrganizationName, Description, ContactEmail, ProfilePictureURL, VerificationStatus)
                         VALUES (@UserID, @OrganizationName, @Description, @ContactEmail, @ProfilePictureURL, 'Pending')
                     `);
-            } else {
-                await new sql.Request(transaction)
-                    .input('UserID', sql.Int, newUserId)
-                    .input('FirstName', sql.NVarChar(50), studentFirstName)
-                    .input('LastName', sql.NVarChar(50), studentLastName)
-                    .input('Department', sql.NVarChar(100), studentDepartment)
-                    .input('YearOfStudy', sql.Int, parsedYear)
-                    .input('DateOfBirth', sql.Date, studentDateOfBirthRaw ? studentDateOfBirth : null)
-                    .input('ProfilePictureURL', sql.NVarChar(sql.MAX), studentProfilePicture)
-                    .query(`
-                        INSERT INTO StudentProfiles (UserID, FirstName, LastName, Department, YearOfStudy, DateOfBirth, ProfilePictureURL)
-                        VALUES (@UserID, @FirstName, @LastName, @Department, @YearOfStudy, @DateOfBirth, @ProfilePictureURL)
-                    `);
-            }
+} else {
+    // UPDATED: Include LinkedInURL and GitHubURL
+    const linkedIn = studentProfile?.linkedInURL || null;
+    const gitHub = studentProfile?.gitHubURL || null;
 
+    await new sql.Request(transaction)
+        .input('UserID', sql.Int, newUserId)
+        .input('FirstName', sql.NVarChar(50), studentFirstName)
+        .input('LastName', sql.NVarChar(50), studentLastName)
+        .input('Department', sql.NVarChar(100), studentDepartment)
+        .input('YearOfStudy', sql.Int, parsedYear)
+        .input('DateOfBirth', sql.Date, studentDateOfBirthRaw ? studentDateOfBirth : null)
+        .input('ProfilePictureURL', sql.NVarChar(sql.MAX), studentProfilePicture)
+        .input('LinkedIn', sql.NVarChar(255), linkedIn)
+        .input('GitHub', sql.NVarChar(255), gitHub)
+        .query(`
+            INSERT INTO StudentProfiles (UserID, FirstName, LastName, Department, YearOfStudy, DateOfBirth, ProfilePictureURL, LinkedInURL, GitHubURL)
+            VALUES (@UserID, @FirstName, @LastName, @Department, @YearOfStudy, @DateOfBirth, @ProfilePictureURL, @LinkedIn, @GitHub)
+        `);
+}
             if (Array.isArray(interests) && interests.length > 0) {
                 const normalizedInterestNames = Array.from(new Set(
                     interests
@@ -252,13 +258,22 @@ router.post('/login', async (req, res) => {
                 ? await bcrypt.compare(password, stored)
                 : password === stored; // Temporary fallback for legacy plaintext rows
 
-            if (isPasswordValid) {
-                res.status(200).json({ 
-                    success: true, 
-                    userId: user.UserID, 
-                    role: user.Role 
-                });
-            } else {
+if (isPasswordValid) {
+    // 2. Generate a JWT token
+    const token = jwt.sign(
+        { userId: user.UserID, role: user.Role }, 
+        process.env.JWT_SECRET || 'supersecret', 
+        { expiresIn: '1h' }
+    );
+    
+    // 3. Return the token to the frontend
+    res.status(200).json({ 
+        success: true, 
+        token, // <--- THE FRONTEND NEEDS THIS TO ACCESS ADMIN ROUTES
+        userId: user.UserID, 
+        role: user.Role 
+    });
+} else {
                 res.status(401).json({ success: false, message: "Invalid email or password" });
             }
         } else {

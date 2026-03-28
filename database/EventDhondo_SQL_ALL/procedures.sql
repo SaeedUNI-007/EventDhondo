@@ -384,7 +384,7 @@ GO
 
 
 -- [OPERATIONS] Mark Attendance via QR Scan
-CREATE OR ALTER PROCEDURE sp_MarkAttendance
+CREATE PROCEDURE sp_MarkAttendance
     @QRCode NVARCHAR(255), @AdminID INT
 AS
 BEGIN
@@ -399,7 +399,7 @@ END;
 GO
 
 -- [FEEDBACK] Submit Review (Only if Attended)
-CREATE OR ALTER PROCEDURE sp_AddReview
+CREATE PROCEDURE sp_AddReview
     @EventID INT, @UserID INT, @Rating INT, @Text NVARCHAR(MAX)
 AS
 BEGIN
@@ -410,7 +410,7 @@ END;
 GO
 
 -- [PORTFOLIO] Add Achievement (1st/2nd/3rd Place)
-CREATE OR ALTER PROCEDURE sp_AddAchievement
+CREATE PROCEDURE sp_AddAchievement
     @UserID INT, @EventID INT, @Position NVARCHAR(50), @Desc NVARCHAR(MAX)
 AS
 BEGIN
@@ -422,7 +422,7 @@ END;
 GO
 
 -- [AUTH] Register Organizer (Societies/Clubs)
-CREATE OR ALTER PROCEDURE sp_RegisterOrganizer
+CREATE PROCEDURE sp_RegisterOrganizer
     @Email NVARCHAR(100), @PasswordHash NVARCHAR(255), @OrgName NVARCHAR(150), @Desc NVARCHAR(MAX), @ContactEmail NVARCHAR(100)
 AS
 BEGIN
@@ -443,7 +443,7 @@ END;
 GO
 
 -- [ADMIN] Verify Organizer (Feature 1)
-CREATE OR ALTER PROCEDURE sp_VerifyOrganizer
+CREATE PROCEDURE sp_VerifyOrganizer
     @OrganizerID INT, @Status NVARCHAR(10) -- 'Verified' or 'Rejected'
 AS
 BEGIN
@@ -454,7 +454,7 @@ GO
 
 
 -- [RECS] Get Events Matching Student Interests
-CREATE OR ALTER PROCEDURE sp_GetRecommendedEvents
+CREATE PROCEDURE sp_GetRecommendedEvents
     @UserID INT
 AS
 BEGIN
@@ -467,7 +467,7 @@ END;
 GO
 
 -- [UTIL] Mark Notification as Read
-CREATE OR ALTER PROCEDURE sp_ReadNotification
+CREATE PROCEDURE sp_ReadNotification
     @NotificationID BIGINT
 AS
 BEGIN

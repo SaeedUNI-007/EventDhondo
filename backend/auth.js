@@ -256,7 +256,7 @@ router.post('/login', async (req, res) => {
             const isBcryptHash = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(stored);
             const isPasswordValid = isBcryptHash
                 ? await bcrypt.compare(password, stored)
-                : password === stored; // Temporary fallback for legacy plaintext rows
+                : false;
 
 if (isPasswordValid) {
     // 2. Generate a JWT token

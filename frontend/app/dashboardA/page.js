@@ -12,14 +12,6 @@ const FALLBACK_STATS = {
   totalRegistrations: 1327,
 };
 
-const FALLBACK_ACTIVITY = [
-  { id: 1, type: "Registration", actor: "Areeba Khan", target: "DevHack 2026", at: "2026-03-21 10:42" },
-  { id: 2, type: "Event", actor: "ACM Student Chapter", target: "Published AI Sprint", at: "2026-03-21 09:55" },
-  { id: 3, type: "Registration", actor: "Ahmed Raza", target: "Basketball Trials", at: "2026-03-20 18:14" },
-  { id: 4, type: "User", actor: "Hina Aslam", target: "Created student account", at: "2026-03-20 16:02" },
-  { id: 5, type: "Event", actor: "FAST Sports Board", target: "Updated venue details", at: "2026-03-20 14:40" },
-];
-
 function StatCard({ title, value, icon: Icon, tone }) {
   return (
     <article className="surface-card reveal-up p-5">
@@ -36,14 +28,16 @@ function StatCard({ title, value, icon: Icon, tone }) {
 
 export default function AdminOverviewPage() {
   const [stats, setStats] = useState(FALLBACK_STATS);
-  const [activity, setActivity] = useState(FALLBACK_ACTIVITY);
+  const [activity, setActivity] = useState([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
     const load = async () => {
       try {
         setError("");
-        const userId = typeof window !== 'undefined' ? sessionStorage.getItem('userID') : null;
+        const userId = typeof window !== 'undefined'
+          ? (sessionStorage.getItem('userID') || sessionStorage.getItem('userId') || localStorage.getItem('userID') || localStorage.getItem('userId'))
+          : null;
 
         const headers = { 'Content-Type': 'application/json' };
         if (userId) {
@@ -66,12 +60,22 @@ export default function AdminOverviewPage() {
         const activityRes = await fetch(`${API_BASE_URL}/api/admin/recent-activity`, { headers });
         if (activityRes.ok) {
           const rows = await activityRes.json();
-          if (Array.isArray(rows) && rows.length > 0) {
-            setActivity(rows.slice(0, 5));
-          }
+          const normalizedRows = Array.isArray(rows)
+            ? rows.map((row, idx) => ({
+                id: row.id || idx + 1,
+                type: row.type || row.Type || row.ActivityType || "Activity",
+                actor: row.actor || row.Actor || row.Source || "System",
+                target: row.target || row.Target || row.Description || "-",
+                at: row.at || row.At || row.Timestamp || "-",
+              }))
+            : [];
+          setActivity(normalizedRows.slice(0, 5));
+        } else {
+          const payload = await activityRes.json().catch(() => ({}));
+          setError(`Could not load recent activity: ${payload?.message || activityRes.status}`);
         }
       } catch (_err) {
-        setError("Using fallback data due to API connectivity issues: " + _err.message);
+        setError("Could not load admin dashboard data: " + _err.message);
       }
     };
 
@@ -115,6 +119,11 @@ export default function AdminOverviewPage() {
               </tr>
             </thead>
             <tbody>
+              {!activity.length && (
+                <tr>
+                  <td colSpan={4} className="px-2 py-4 text-center text-slate-500">No recent activity found yet.</td>
+                </tr>
+              )}
               {activity.map((row) => (
                 <tr key={row.id || `${row.type}-${row.actor}-${row.at}`} className="border-b border-slate-100 last:border-none">
                   <td className="px-2 py-3">{row.type}</td>

@@ -3,6 +3,11 @@ const express = require('express');
 const router = express.Router();
 const { sql, poolPromise } = require('../db');
 const { authMiddleware, adminMiddleware } = require('../middleware/auth');
+const bcrypt = require('bcrypt');
+
+const SYSTEM_STUDENT_EVENTS_EMAIL = 'student.events@eventdhondo.local';
+const SYSTEM_STUDENT_EVENTS_ORG = 'Student Event Desk';
+const REQUEST_PAYLOAD_PREFIX = '__REQUEST_PAYLOAD__:';
 
 // All admin routes require authentication and admin role
 router.use(authMiddleware);
@@ -75,66 +80,166 @@ router.get('/recent-activity', async (req, res) => {
         const pool = await poolPromise;
         const limit = Number(req.query.limit) || 20;
 
-        // Get recent events created
-        const eventsActivity = await pool.request()
+        const result = await pool.request()
             .input('Limit', sql.Int, limit)
             .query(`
+                WITH Activity AS (
+                    SELECT
+                        'Event' AS [Type],
+                        ISNULL(op.OrganizationName, 'Organizer') AS Actor,
+                        CONCAT('Created: ', e.Title) AS [Target],
+                        COALESCE(e.UpdatedAt, e.CreatedAt) AS [At]
+                    FROM Events e
+                    LEFT JOIN OrganizerProfiles op ON op.UserID = e.OrganizerID
+
+                    UNION ALL
+
+                    SELECT
+                        'Registration' AS [Type],
+                        u.Email AS Actor,
+                        CONCAT('Registered for: ', e.Title) AS [Target],
+                        r.RegistrationDate AS [At]
+                    FROM Registrations r
+                    JOIN Users u ON u.UserID = r.UserID
+                    JOIN Events e ON e.EventID = r.EventID
+
+                    UNION
+                    SELECT
+                    'Unregistration' AS [Type],
+                    u.Email AS Actor,
+                    CONCAT('Unregistered from: ', e.Title) AS [Target],
+                    r.CancelledAt AS [At]
+                    FROM Registrations r
+                    JOIN Users u ON u.UserID = r.UserID
+                    JOIN Events e ON e.EventID = r.EventID
+                    WHERE r.Status = 'Cancelled'
+                    AND r.CancelledAt IS NOT NULL
+
+                    UNION ALL
+
+                    SELECT
+                        'Request' AS [Type],
+                        su.Email AS Actor,
+                        CONCAT('Event request ', er.Status, ': ', er.Title) AS [Target],
+                        er.SubmittedAt AS [At]
+                    FROM EventRequests er
+                    JOIN Users su ON su.UserID = er.StudentID
+                )
                 SELECT TOP (@Limit)
-                    'Event Created' AS ActivityType,
-                    e.Title AS Description,
-                    o.OrganizationName AS Source,
-                    e.CreatedAt AS Timestamp
-                FROM Events e
-                JOIN OrganizerProfiles o ON e.OrganizerID = o.UserID
-                ORDER BY e.CreatedAt DESC
+                    [Type] AS [type],
+                    Actor AS [actor],
+                    [Target] AS [target],
+                    CONVERT(VARCHAR, [At], 120) AS [at]
+                FROM Activity
+                ORDER BY [At] DESC
             `);
 
-        // Get recent registrations
-        const registrationsActivity = await pool.request()
-            .input('Limit', sql.Int, limit)
-            .query(`
-                SELECT TOP (@Limit)
-                    'New Registration' AS ActivityType,
-                    e.Title AS Description,
-                    u.Email AS Source,
-                    r.RegistrationDate AS Timestamp
-                FROM Registrations r
-                JOIN Events e ON r.EventID = e.EventID
-                JOIN Users u ON r.UserID = u.UserID
-                ORDER BY r.RegistrationDate DESC
-            `);
-
-        // Get organizer verifications/rejections
-        const verificationsActivity = await pool.request()
-            .input('Limit', sql.Int, limit)
-            .query(`
-                SELECT TOP (@Limit)
-                    'Organizer ' + op.VerificationStatus AS ActivityType,
-                    op.OrganizationName AS Description,
-                    u.Email AS Source,
-                    op.VerificationStatus + ' at ' + CONVERT(VARCHAR, GETDATE(), 121) AS Timestamp
-                FROM OrganizerProfiles op
-                JOIN Users u ON op.UserID = u.UserID
-                WHERE op.VerificationStatus IN ('Verified', 'Rejected', 'Pending')
-                ORDER BY u.CreatedAt DESC
-            `);
-
-        // Combine and sort by timestamp (most recent first)
-        const allActivity = [
-            ...eventsActivity.recordset,
-            ...registrationsActivity.recordset,
-            ...verificationsActivity.recordset,
-        ];
-
-        allActivity.sort((a, b) => new Date(b.Timestamp) - new Date(a.Timestamp));
-        const recentActivity = allActivity.slice(0, limit);
-
-        res.json(recentActivity);
+        res.json(result.recordset || []);
     } catch (err) {
         console.error('Admin Activity Error:', err);
         res.status(500).json({ success: false, message: err.message || 'Failed to fetch activity' });
     }
 });
+
+const ensureStudentEventsOrganizer = async (pool) => {
+    const existing = await pool.request()
+        .input('Email', sql.NVarChar(255), SYSTEM_STUDENT_EVENTS_EMAIL)
+        .query(`
+            SELECT TOP 1 u.UserID
+            FROM Users u
+            JOIN OrganizerProfiles op ON op.UserID = u.UserID
+            WHERE u.Email = @Email
+        `);
+
+    const existingId = Number(existing.recordset?.[0]?.UserID);
+    if (Number.isInteger(existingId) && existingId > 0) {
+        return existingId;
+    }
+
+    const passwordHash = await bcrypt.hash('StudentEventsDesk!2026', 10);
+
+    const createdUser = await pool.request()
+        .input('Email', sql.NVarChar(255), SYSTEM_STUDENT_EVENTS_EMAIL)
+        .input('PasswordHash', sql.NVarChar(255), passwordHash)
+        .query(`
+            IF EXISTS (SELECT 1 FROM Users WHERE Email = @Email)
+            BEGIN
+                SELECT TOP 1 UserID FROM Users WHERE Email = @Email;
+            END
+            ELSE
+            BEGIN
+                INSERT INTO Users (Email, PasswordHash, Role, VerificationStatus)
+                VALUES (@Email, @PasswordHash, 'Organizer', 'Verified');
+                SELECT CAST(SCOPE_IDENTITY() AS INT) AS UserID;
+            END
+        `);
+
+    const userId = Number(createdUser.recordset?.[0]?.UserID);
+    if (!Number.isInteger(userId) || userId <= 0) {
+        throw new Error('Failed to create system organizer user');
+    }
+
+    await pool.request()
+        .input('UserID', sql.Int, userId)
+        .input('OrganizationName', sql.NVarChar(150), SYSTEM_STUDENT_EVENTS_ORG)
+        .input('Description', sql.NVarChar(sql.MAX), 'Auto-managed organizer profile for approved student event requests.')
+        .input('ContactEmail', sql.NVarChar(100), SYSTEM_STUDENT_EVENTS_EMAIL)
+        .query(`
+            IF NOT EXISTS (SELECT 1 FROM OrganizerProfiles WHERE UserID = @UserID)
+            BEGIN
+                INSERT INTO OrganizerProfiles (UserID, OrganizationName, Description, ContactEmail, VerificationStatus)
+                VALUES (@UserID, @OrganizationName, @Description, @ContactEmail, 'Verified');
+            END
+            ELSE
+            BEGIN
+                UPDATE OrganizerProfiles
+                SET VerificationStatus = 'Verified'
+                WHERE UserID = @UserID;
+            END
+
+            UPDATE Users
+            SET Role = 'Organizer', VerificationStatus = 'Verified'
+            WHERE UserID = @UserID;
+        `);
+
+    return userId;
+};
+
+const toDateOnly = (value) => {
+    const dateObj = value ? new Date(value) : new Date();
+    if (Number.isNaN(dateObj.getTime())) {
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    }
+    return `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
+};
+
+const normalizeTimeInput = (value) => {
+    if (!value) return null;
+    const raw = String(value).trim().toLowerCase();
+
+    const hhmm = raw.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (hhmm) {
+        const h = Number(hhmm[1]);
+        const m = Number(hhmm[2]);
+        const s = Number(hhmm[3] || 0);
+        if (h > 23 || m > 59 || s > 59) return null;
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+
+    return null;
+};
+
+const parseRequestPayload = (adminNotesRaw) => {
+    const raw = String(adminNotesRaw || '');
+    if (!raw.startsWith(REQUEST_PAYLOAD_PREFIX)) return {};
+
+    try {
+        return JSON.parse(raw.slice(REQUEST_PAYLOAD_PREFIX.length));
+    } catch (_err) {
+        return {};
+    }
+};
 
 /**
  * GET /api/admin/requests
@@ -155,7 +260,11 @@ router.get('/requests', async (req, res) => {
                 er.SuggestedDate,
                 er.Status,
                 CONVERT(VARCHAR, er.SubmittedAt, 120) AS SubmittedAt,
-                er.AdminNotes
+                CASE
+                    WHEN LEFT(COALESCE(er.AdminNotes, ''), ${REQUEST_PAYLOAD_PREFIX.length}) = '${REQUEST_PAYLOAD_PREFIX}'
+                    THEN NULL
+                    ELSE er.AdminNotes
+                END AS AdminNotes
             FROM EventRequests er
             JOIN Users u ON er.StudentID = u.UserID
             LEFT JOIN StudentProfiles sp ON u.UserID = sp.UserID
@@ -167,6 +276,62 @@ router.get('/requests', async (req, res) => {
     } catch (err) {
         console.error('Admin Requests Error:', err);
         res.status(500).json({ success: false, message: err.message || 'Failed to fetch requests' });
+    }
+});
+
+const fetchPendingOrganizers = async (pool) => {
+    const result = await pool.request().query(`
+        SELECT
+            op.UserID,
+            op.OrganizationName,
+            op.ContactEmail,
+            op.Description,
+            CONVERT(VARCHAR, COALESCE(u.CreatedAt, SYSDATETIMEOFFSET()), 120) AS RequestedDate,
+            op.VerificationStatus
+        FROM OrganizerProfiles op
+        JOIN Users u ON op.UserID = u.UserID
+        WHERE op.VerificationStatus = 'Pending'
+        ORDER BY u.CreatedAt DESC
+    `);
+
+    return result.recordset;
+};
+
+/**
+ * GET /api/admin/pending-organizers
+ * Returns pending organizer verification requests
+ */
+router.get('/pending-organizers', async (req, res) => {
+    try {
+        const pool = await poolPromise;
+        const rows = await fetchPendingOrganizers(pool);
+        res.json(rows);
+    } catch (err) {
+        console.error('Admin Pending Organizers Error:', err);
+        res.status(500).json({ success: false, message: err.message || 'Failed to fetch pending organizers' });
+    }
+});
+
+// Backward-compatible aliases used by some older frontend pages.
+router.get('/pending-organizer', async (req, res) => {
+    try {
+        const pool = await poolPromise;
+        const rows = await fetchPendingOrganizers(pool);
+        res.json(rows);
+    } catch (err) {
+        console.error('Admin Pending Organizer Alias Error:', err);
+        res.status(500).json({ success: false, message: err.message || 'Failed to fetch pending organizers' });
+    }
+});
+
+router.get('/organizer-requests', async (req, res) => {
+    try {
+        const pool = await poolPromise;
+        const rows = await fetchPendingOrganizers(pool);
+        res.json(rows);
+    } catch (err) {
+        console.error('Admin Organizer Requests Alias Error:', err);
+        res.status(500).json({ success: false, message: err.message || 'Failed to fetch pending organizers' });
     }
 });
 
@@ -200,30 +365,10 @@ router.put('/event-request/:id', async (req, res) => {
         }
 
         const eventRequest = requestResult.recordset[0];
+        const payload = parseRequestPayload(eventRequest.AdminNotes);
 
         if (status === 'Approved') {
-            // Create an actual event from the request
-            const studentId = eventRequest.StudentID;
-            
-            // Insert into Events table - use StudentID as the organizer for now
-            const eventResult = await pool.request()
-                .input('Title', sql.NVarChar(200), eventRequest.Title)
-                .input('Description', sql.NVarChar(sql.MAX), eventRequest.Description)
-                .input('EventDate', sql.Date, eventRequest.SuggestedDate)
-                .input('OrganizerID', sql.Int, studentId)
-                .input('Capacity', sql.Int, 100) // Default capacity
-                .input('RegistrationDeadline', sql.DateTime2, eventRequest.SuggestedDate) // Default to event date
-                .input('Venue', sql.NVarChar(200), 'TBD')
-                .input('Status', sql.NVarChar(20), 'Draft')
-                .query(`
-                    INSERT INTO Events (Title, Description, EventDate, OrganizerID, Capacity, RegistrationDeadline, Venue, Status)
-                    VALUES (@Title, @Description, @EventDate, @OrganizerID, @Capacity, @RegistrationDeadline, @Venue, @Status);
-                    SELECT SCOPE_IDENTITY() AS EventID;
-                `);
-
-            const eventId = eventResult.recordset[0]?.EventID;
-
-            // Update the request status
+            // Always mark the request approved first.
             await pool.request()
                 .input('RequestID', sql.Int, requestId)
                 .input('Status', sql.NVarChar(10), 'Approved')
@@ -234,11 +379,85 @@ router.put('/event-request/:id', async (req, res) => {
                     WHERE RequestID = @RequestID
                 `);
 
+            const organizerId = await ensureStudentEventsOrganizer(pool);
+
+            const requestedType = String(payload.eventType || '').trim();
+            const allowedTypes = new Set(['Competition', 'Workshop', 'Seminar', 'Cultural', 'Sports']);
+            const eventType = allowedTypes.has(requestedType) ? requestedType : 'Seminar';
+
+            const eventDateOnly = toDateOnly(payload.eventDate || eventRequest.SuggestedDate);
+            const eventTime = normalizeTimeInput(payload.eventTime) || '12:00:00';
+            const venue = String(payload.venue || '').trim() || 'TBD';
+            const capacity = Math.max(1, Number.parseInt(payload.capacity, 10) || 100);
+
+            const requestedDeadline = payload.registrationDeadline ? new Date(payload.registrationDeadline) : null;
+            let registrationDeadline = `${eventDateOnly}T00:00:00+00:00`;
+            if (requestedDeadline && !Number.isNaN(requestedDeadline.getTime())) {
+                const deadlineDateOnly = toDateOnly(requestedDeadline);
+                registrationDeadline = deadlineDateOnly > eventDateOnly
+                    ? `${eventDateOnly}T00:00:00+00:00`
+                    : requestedDeadline;
+            }
+
+            const posterURLRaw = String(payload.posterURL || '').trim() || null;
+            if (posterURLRaw && posterURLRaw.length > 255) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'posterURL is too long (max 255 characters). Please use a shorter hosted URL in the request.',
+                });
+            }
+            const eventResult = await pool.request()
+                .input('OrganizerID', sql.Int, organizerId)
+                .input('Title', sql.NVarChar(200), eventRequest.Title)
+                .input('Description', sql.NVarChar(sql.MAX), payload.description || eventRequest.Description || null)
+                .input('EventType', sql.NVarChar(20), eventType)
+                .input('EventDate', sql.Date, eventDateOnly)
+                .input('EventTime', sql.NVarChar(20), eventTime)
+                .input('Venue', sql.NVarChar(150), venue)
+                .input('Capacity', sql.Int, capacity)
+                .input('RegistrationDeadline', sql.DateTimeOffset, registrationDeadline)
+                .input('Status', sql.NVarChar(20), 'Published')
+                .input('PosterURL', sql.NVarChar(sql.MAX), posterURLRaw)
+                .query(`
+                    INSERT INTO Events (
+                        OrganizerID,
+                        Title,
+                        Description,
+                        EventType,
+                        EventDate,
+                        EventTime,
+                        Venue,
+                        Capacity,
+                        RegistrationDeadline,
+                        Status,
+                        PosterURL
+                    )
+                    VALUES (
+                        @OrganizerID,
+                        @Title,
+                        @Description,
+                        @EventType,
+                        @EventDate,
+                        CAST(@EventTime AS TIME),
+                        @Venue,
+                        @Capacity,
+                        @RegistrationDeadline,
+                        @Status,
+                        @PosterURL
+                    );
+
+                    SELECT CAST(SCOPE_IDENTITY() AS INT) AS EventID;
+                `);
+
+            const eventId = eventResult.recordset?.[0]?.EventID || null;
             res.json({
                 success: true,
-                message: 'Event request approved and event created',
+                message: eventId
+                    ? 'Event request approved and published event created.'
+                    : 'Event request approved.',
                 eventId,
                 status: 'Approved',
+                eventCreated: Boolean(eventId),
             });
         } else {
             // Reject the request
@@ -291,6 +510,19 @@ router.put('/verify-organizer/:id', async (req, res) => {
                 .input('Status', sql.NVarChar(10), 'Verified')
                 .execute('dbo.sp_VerifyOrganizer');
 
+            // Keep both status columns in sync even if procedure implementation differs.
+            await pool.request()
+                .input('OrganizerID', sql.Int, organizerId)
+                .query(`
+                    UPDATE OrganizerProfiles
+                    SET VerificationStatus = 'Verified'
+                    WHERE UserID = @OrganizerID;
+
+                    UPDATE Users
+                    SET VerificationStatus = 'Verified'
+                    WHERE UserID = @OrganizerID;
+                `);
+
             res.json({
                 success: true,
                 message: 'Organizer verified successfully',
@@ -309,6 +541,18 @@ router.put('/verify-organizer/:id', async (req, res) => {
                 return res.status(400).json({ success: false, message });
             }
 
+            await pool.request()
+                .input('OrganizerID', sql.Int, organizerId)
+                .query(`
+                    UPDATE OrganizerProfiles
+                    SET VerificationStatus = 'Rejected'
+                    WHERE UserID = @OrganizerID;
+
+                    UPDATE Users
+                    SET VerificationStatus = 'Rejected'
+                    WHERE UserID = @OrganizerID;
+                `);
+
             res.json({
                 success: true,
                 message,
@@ -318,6 +562,44 @@ router.put('/verify-organizer/:id', async (req, res) => {
     } catch (err) {
         console.error('Admin Verify Organizer Error:', err);
         res.status(500).json({ success: false, message: err.message || 'Failed to update organizer' });
+    }
+});
+
+/**
+ * GET /api/admin/student-events
+ * Returns events generated from student requests (managed by Student Event Desk organizer)
+ */
+router.get('/student-events', async (req, res) => {
+    try {
+        const pool = await poolPromise;
+        const result = await pool.request()
+            .input('Email', sql.NVarChar(255), SYSTEM_STUDENT_EVENTS_EMAIL)
+            .query(`
+                SELECT
+                    e.EventID,
+                    e.Title,
+                    e.Description,
+                    e.EventType,
+                    e.EventDate,
+                    e.EventTime,
+                    e.Venue,
+                    e.Capacity,
+                    e.RegistrationDeadline,
+                    e.Status,
+                    e.PosterURL,
+                    op.OrganizationName AS Organizer,
+                    op.ContactEmail AS OrganizerEmail
+                FROM Events e
+                JOIN Users u ON u.UserID = e.OrganizerID
+                LEFT JOIN OrganizerProfiles op ON op.UserID = e.OrganizerID
+                WHERE u.Email = @Email
+                ORDER BY e.EventDate DESC, e.EventTime DESC
+            `);
+
+        res.json(result.recordset || []);
+    } catch (err) {
+        console.error('Admin Student Events Error:', err);
+        res.status(500).json({ success: false, message: err.message || 'Failed to fetch student events' });
     }
 });
 

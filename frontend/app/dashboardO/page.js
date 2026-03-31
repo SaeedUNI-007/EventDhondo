@@ -270,17 +270,17 @@ export default function DashboardO() {
 
             <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
               {visibleEvents.map((ev) => (
-                <article key={ev.EventID || ev.id || ev.eventId} className="surface-card reveal-up overflow-hidden p-4">
+                <article key={ev.EventID || ev.id || ev.eventId} className="surface-card reveal-up h-full overflow-hidden p-4 flex flex-col">
                   <div className="mb-3 flex items-center justify-between">
                     <p className="rounded-full bg-[var(--surface-soft)] px-3 py-1 text-xs font-bold text-[var(--brand-strong)]">{ev.EventType || ev.EventCategory || "Event"}</p>
                     <p className="text-xs font-semibold text-slate-500">{ev.EventDate ? new Date(ev.EventDate).toLocaleDateString() : (ev.date || "")}</p>
                   </div>
-                  <h3 className="text-lg font-bold text-slate-900">{ev.Title || ev.title}</h3>
-                  <p className="mt-1 text-sm text-slate-600">{ev.Description ? ev.Description.slice(0, 140) : ev.description}</p>
+                  <h3 className="min-h-[56px] text-lg font-bold text-slate-900">{ev.Title || ev.title}</h3>
+                  <p className="mt-1 min-h-[48px] text-sm text-slate-600">{ev.Description ? ev.Description.slice(0, 120) : ev.description}</p>
                   <p className="mt-2 text-sm text-slate-600">{ev.Venue || ev.venue}</p>
-                  <div className="mt-4 flex gap-2">
-                    <Link href={`/events/${ev.EventID || ev.id || ""}`} className="cta px-3 py-2 text-sm font-semibold">View</Link>
-                    <Link href={`/events/edit/${ev.EventID || ev.id || ""}`} className="rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm font-semibold hover:bg-[var(--surface-soft)]">Edit</Link>
+                  <div className="mt-auto pt-4 flex gap-2">
+                    <Link href={`/viewEventO?eventId=${ev.EventID || ev.id || ev.eventId || ""}`} className="cta px-3 py-2 text-sm font-semibold">View</Link>
+                    <Link href={`/event/edit/${ev.EventID || ev.id || ev.eventId || ""}`} className="rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm font-semibold hover:bg-[var(--surface-soft)]">Edit</Link>
                   </div>
                 </article>
               ))}

@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { href: "/dashboardA", label: "Overview", icon: BarChart3 },
   { href: "/dashboardA/verification", label: "Organizer Verification", icon: BadgeCheck },
   { href: "/dashboardA/events", label: "Manage Events", icon: CalendarRange },
+  { href: "/dashboardA/student-events", label: "Student Events", icon: CalendarRange },
   { href: "/dashboardA/requests", label: "Student Requests", icon: Lightbulb },
 ];
 

@@ -4,21 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
-const FALLBACK_PENDING_ORGANIZERS = [
-  {
-    UserID: 32,
-    OrganizationName: "FAST Innovation Club",
-    ContactEmail: "innovation@fast.edu.pk",
-    Description: "Student-led innovation and startup events.",
-    RequestedDate: "2026-03-19",
-  },
-  {
-    UserID: 45,
-    OrganizationName: "Debate and Oratory Society",
-    ContactEmail: "debate@fast.edu.pk",
-    Description: "Inter-campus debates and public speaking sessions.",
-    RequestedDate: "2026-03-20",
-  },
+const PENDING_ENDPOINTS = [
+  "/api/admin/pending-organizers",
+  "/api/admin/pending-organizer",
+  "/api/admin/organizer-requests",
 ];
 
 export default function OrganizerVerificationPage() {
@@ -30,26 +19,52 @@ export default function OrganizerVerificationPage() {
     const loadPending = async () => {
       try {
         setStatus("");
-        const userId = typeof window !== 'undefined' ? sessionStorage.getItem('userID') : null;
+        const userId = typeof window !== 'undefined'
+          ? (sessionStorage.getItem('userID') || sessionStorage.getItem('userId') || localStorage.getItem('userID') || localStorage.getItem('userId'))
+          : null;
 
         const headers = { 'Content-Type': 'application/json' };
         if (userId) {
           headers['x-user-id'] = userId;
         }
 
-        const requestsRes = await fetch(`${API_BASE_URL}/api/admin/requests`, { headers });
-        if (!requestsRes.ok) {
-          setOrganizers(FALLBACK_PENDING_ORGANIZERS);
-          setStatus("Using mock organizers because admin requests endpoint returned: " + requestsRes.status);
+        let lastError = "";
+        let data = [];
+        let loaded = false;
+
+        for (const endpoint of PENDING_ENDPOINTS) {
+          const pendingRes = await fetch(`${API_BASE_URL}${endpoint}`, { headers });
+          if (pendingRes.ok) {
+            data = await pendingRes.json();
+            loaded = true;
+            break;
+          }
+
+          const payload = await pendingRes.json().catch(() => ({}));
+          lastError = payload?.message || `Status ${pendingRes.status}`;
+
+          if (pendingRes.status !== 404) {
+            break;
+          }
+        }
+
+        if (!loaded) {
+          setOrganizers([]);
+          setStatus(`Failed to load pending organizers: ${lastError || "endpoint not found"}`);
           return;
         }
 
-        const data = await requestsRes.json();
-        const pendingRows = Array.isArray(data) ? data : [];
+        const pendingRows = (Array.isArray(data) ? data : []).map((row) => ({
+          UserID: row.UserID,
+          OrganizationName: row.OrganizationName,
+          ContactEmail: row.ContactEmail,
+          Description: row.Description,
+          RequestedDate: row.RequestedDate,
+        }));
         setOrganizers(pendingRows);
       } catch (_err) {
-        setOrganizers(FALLBACK_PENDING_ORGANIZERS);
-        setStatus("Using mock organizers due to API connectivity issues: " + _err.message);
+        setOrganizers([]);
+        setStatus("Failed to load pending organizers: " + _err.message);
       }
     };
 
@@ -65,7 +80,9 @@ export default function OrganizerVerificationPage() {
   const handleApprove = async (id) => {
     setRowLoading(id, true);
     try {
-      const userId = typeof window !== 'undefined' ? sessionStorage.getItem('userID') : null;
+      const userId = typeof window !== 'undefined'
+        ? (sessionStorage.getItem('userID') || sessionStorage.getItem('userId') || localStorage.getItem('userID') || localStorage.getItem('userId'))
+        : null;
 
       const headers = { 'Content-Type': 'application/json' };
       if (userId) {
@@ -79,7 +96,8 @@ export default function OrganizerVerificationPage() {
       });
 
       if (!res.ok) {
-        throw new Error("Approve failed: " + res.status);
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload?.message || `Approve failed (${res.status})`);
       }
 
       setOrganizers((prev) => prev.filter((item) => Number(item.UserID) !== Number(id)));
@@ -99,7 +117,9 @@ export default function OrganizerVerificationPage() {
         return;
       }
 
-      const userId = typeof window !== 'undefined' ? sessionStorage.getItem('userID') : null;
+      const userId = typeof window !== 'undefined'
+        ? (sessionStorage.getItem('userID') || sessionStorage.getItem('userId') || localStorage.getItem('userID') || localStorage.getItem('userId'))
+        : null;
 
       const headers = { 'Content-Type': 'application/json' };
       if (userId) {
@@ -113,7 +133,8 @@ export default function OrganizerVerificationPage() {
       });
 
       if (!res.ok) {
-        throw new Error("Reject failed: " + res.status);
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload?.message || `Reject failed (${res.status})`);
       }
 
       setOrganizers((prev) => prev.filter((item) => Number(item.UserID) !== Number(id)));

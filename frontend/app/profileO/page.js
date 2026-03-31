@@ -39,6 +39,7 @@ export default function ProfileO() {
   const resetFromScopedStorage = () => {
     setOrgName(readScopedValue("organizationName", "Organization Name"));
     setDescription(readScopedValue("organizationDescription", "Not set"));
+    setContactEmail(readScopedValue("userEmail", "no-reply@organization.org"));
     setProfilePictureDataUrl(readScopedValue("profilePictureURL", ""));
   };
 
@@ -72,7 +73,12 @@ export default function ProfileO() {
       if (!userId) return;
       try {
         setStatus("Loading profile...");
-        const res = await fetch(`${API_BASE_URL}/api/profile/${encodeURIComponent(userId)}`);
+        const res = await fetch(`${API_BASE_URL}/api/profile/${encodeURIComponent(userId)}`, {
+          headers: {
+            "Content-Type": "application/json",
+            "x-user-id": String(userId),
+          },
+        });
         const data = await res.json();
         if (!res.ok || !data) {
           throw new Error(data?.message || "Failed to load profile");
@@ -185,8 +191,13 @@ export default function ProfileO() {
               <div className="flex items-center gap-3">
                 <div className="w-44 text-sm font-medium text-slate-700">Contact Email</div>
                 <div className="flex-1">
-                  <div className="text-sm text-slate-800">{contactEmail}</div>
-                  <div className="text-xs text-slate-400 mt-1">Contact email is permanent</div>
+                  <input
+                    disabled={!isEditing}
+                    value={contactEmail}
+                    onChange={(e) => setContactEmail(e.target.value)}
+                    className="rounded-xl border border-[var(--stroke)] px-3 py-2 w-full disabled:bg-slate-50 disabled:text-slate-500"
+                    type="email"
+                  />
                 </div>
               </div>
 
@@ -226,11 +237,15 @@ export default function ProfileO() {
                       setStatus("Saving profile...");
                       const res = await fetch(`${API_BASE_URL}/api/profile/${encodeURIComponent(userId)}`, {
                         method: "PUT",
-                        headers: { "Content-Type": "application/json" },
+                        headers: {
+                          "Content-Type": "application/json",
+                          "x-user-id": String(userId),
+                        },
                         body: JSON.stringify({
                           role: "organizer",
                           organizationName: orgName,
                           description: description === "Not set" ? null : description,
+                          contactEmail: contactEmail || null,
                           profilePictureURL: profilePictureDataUrl || null,
                         }),
                       });

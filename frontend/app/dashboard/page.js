@@ -7,6 +7,9 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 export default function DashboardStudent() {
   const [userRole, setUserRole] = useState('');
   const [events, setEvents] = useState([]);
+  const [registeredEventIds, setRegisteredEventIds] = useState([]);
+  const [registeringByEventId, setRegisteringByEventId] = useState({});
+  const [actionMessage, setActionMessage] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [userEmail, setUserEmail] = useState('');
   const [viewMode, setViewMode] = useState('available'); // 'available' | 'yours'
@@ -49,7 +52,32 @@ export default function DashboardStudent() {
         }
       };
 
+      const loadRegistrations = async () => {
+        try {
+          if (!id || !Number.isInteger(Number(id))) {
+            setRegisteredEventIds([]);
+            return;
+          }
+
+          const res = await fetch(`${API_BASE_URL}/api/events/registrations/${encodeURIComponent(id)}`);
+          const data = await res.json();
+          if (!res.ok || !Array.isArray(data)) {
+            throw new Error('Failed to load registrations');
+          }
+
+          const activeEventIds = data
+            .filter((r) => String(r.Status || '').toLowerCase() !== 'cancelled')
+            .map((r) => Number(r.EventID || r.eventId))
+            .filter((n) => Number.isInteger(n));
+
+          setRegisteredEventIds(Array.from(new Set(activeEventIds)));
+        } catch (_err) {
+          setRegisteredEventIds([]);
+        }
+      };
+
       loadEvents();
+      loadRegistrations();
     }
   }, []);
 
@@ -69,6 +97,57 @@ export default function DashboardStudent() {
     const oid = (ev.organizerId ?? ev.organizer ?? ev.createdBy ?? ev.creatorId ?? ev.userId);
     return String(oid || '') === String(userId || '');
   }
+
+  const isAlreadyRegistered = (eventIdValue) => {
+    const idNum = Number(eventIdValue);
+    return Number.isInteger(idNum) && registeredEventIds.includes(idNum);
+  };
+
+  const handleQuickRegister = async (eventIdValue) => {
+    const parsedUserId = Number(userId);
+    const parsedEventId = Number(eventIdValue);
+
+    if (!Number.isInteger(parsedUserId) || parsedUserId <= 0) {
+      setActionMessage('Please login again before registering.');
+      return;
+    }
+
+    if (!Number.isInteger(parsedEventId) || parsedEventId <= 0) {
+      setActionMessage('Invalid event selected.');
+      return;
+    }
+
+    if (isAlreadyRegistered(parsedEventId)) {
+      setActionMessage('You are already registered for this event.');
+      return;
+    }
+
+    setRegisteringByEventId((prev) => ({ ...prev, [parsedEventId]: true }));
+    setActionMessage('');
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/events/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': String(parsedUserId),
+        },
+        body: JSON.stringify({ eventId: parsedEventId }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.message || 'Registration failed');
+      }
+
+      setRegisteredEventIds((prev) => (prev.includes(parsedEventId) ? prev : [...prev, parsedEventId]));
+      setActionMessage(data?.message || 'Registered successfully.');
+    } catch (err) {
+      setActionMessage(err?.message || 'Registration failed.');
+    } finally {
+      setRegisteringByEventId((prev) => ({ ...prev, [parsedEventId]: false }));
+    }
+  };
 
   // base set according to view mode
   const baseEvents = useMemo(() => {
@@ -256,6 +335,10 @@ export default function DashboardStudent() {
               <span className="text-sm text-slate-500">{displayedEvents.length} events</span>
             </div>
 
+            {actionMessage && (
+              <p className="mb-3 rounded-lg bg-[var(--surface-soft)] p-3 text-sm text-slate-700">{actionMessage}</p>
+            )}
+
             {displayedEvents.length === 0 && (
               <p className="rounded-lg bg-[var(--surface-soft)] p-3 text-slate-600">
                 {viewMode === 'available'
@@ -266,20 +349,33 @@ export default function DashboardStudent() {
 
             <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
               {displayedEvents.map(ev => (
-                <article key={ev.EventID || ev.id || ev.eventId} className="surface-card reveal-up overflow-hidden p-4">
+                <article key={ev.EventID || ev.id || ev.eventId} className="surface-card reveal-up h-full overflow-hidden p-4 flex flex-col">
                   <div className="mb-3 flex items-center justify-between">
                     <p className="rounded-full bg-[var(--surface-soft)] px-3 py-1 text-xs font-bold text-[var(--brand-strong)]">{ev.eventType || ev.EventType || "Event"}</p>
                     <p className="text-xs font-semibold text-slate-500">{formatDate(ev.EventDate || ev.eventDate)}</p>
                   </div>
-                  <h3 className="text-lg font-bold text-slate-900">{ev.title || ev.Title}</h3>
-                  <p className="mt-1 text-sm text-slate-600">{(ev.description || ev.Description || "").slice(0, 140)}</p>
+                  <h3 className="min-h-[56px] text-lg font-bold text-slate-900">{ev.title || ev.Title}</h3>
+                  <p className="mt-1 min-h-[48px] text-sm text-slate-600">{(ev.description || ev.Description || "").slice(0, 120)}</p>
                   <p className="mt-2 text-sm text-slate-600">{ev.venue || ev.Venue || 'TBA'}</p>
 
-                  <div className="mt-4 flex gap-2">
+                  <div className="mt-auto pt-4 flex gap-2">
                     {viewMode === 'available' ? (
                       <>
-                        <Link href={`/viewEvent?eventId=${ev.EventID || ev.id || ev.eventId}`} className="cta px-3 py-2 text-sm font-semibold">Register</Link>
-                        <Link href={`/event/view/${ev.EventID || ev.id || ev.eventId}`} className="rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm font-semibold hover:bg-[var(--surface-soft)]">Details</Link>
+                        {isAlreadyRegistered(ev.EventID || ev.id || ev.eventId) ? (
+                          <button type="button" disabled className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white opacity-80">
+                            Registered
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleQuickRegister(ev.EventID || ev.id || ev.eventId)}
+                            disabled={Boolean(registeringByEventId[Number(ev.EventID || ev.id || ev.eventId)])}
+                            className="cta px-3 py-2 text-sm font-semibold disabled:opacity-70"
+                          >
+                            {Boolean(registeringByEventId[Number(ev.EventID || ev.id || ev.eventId)]) ? 'Registering...' : 'Register'}
+                          </button>
+                        )}
+                        <Link href={`/viewEvent?eventId=${ev.EventID || ev.id || ev.eventId}`} className="rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm font-semibold hover:bg-[var(--surface-soft)]">View Details</Link>
                       </>
                     ) : (
                       <>

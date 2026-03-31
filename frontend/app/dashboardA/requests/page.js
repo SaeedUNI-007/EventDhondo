@@ -4,25 +4,6 @@ import { useEffect, useState } from "react";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
-const FALLBACK_REQUESTS = [
-  {
-    RequestID: 501,
-    StudentID: 77,
-    Title: "Photography Masterclass",
-    Description: "Hands-on DSLR and mobile photography workshop.",
-    SuggestedDate: "2026-04-16",
-    Status: "Pending",
-  },
-  {
-    RequestID: 502,
-    StudentID: 84,
-    Title: "System Design Bootcamp",
-    Description: "Two-day practical session on scalable system architecture.",
-    SuggestedDate: "2026-04-21",
-    Status: "Pending",
-  },
-];
-
 export default function StudentRequestsPage() {
   const [requests, setRequests] = useState([]);
   const [notice, setNotice] = useState("");
@@ -31,7 +12,10 @@ export default function StudentRequestsPage() {
   useEffect(() => {
     const loadRequests = async () => {
       try {
-        const userId = typeof window !== 'undefined' ? sessionStorage.getItem('userID') : null;
+        setNotice("");
+        const userId = typeof window !== 'undefined'
+          ? (sessionStorage.getItem('userID') || sessionStorage.getItem('userId') || localStorage.getItem('userID') || localStorage.getItem('userId'))
+          : null;
 
         const headers = { 'Content-Type': 'application/json' };
         if (userId) {
@@ -40,16 +24,17 @@ export default function StudentRequestsPage() {
 
         const res = await fetch(`${API_BASE_URL}/api/admin/requests`, { headers });
         if (!res.ok) {
-          setRequests(FALLBACK_REQUESTS);
-          setNotice("Using mock student requests because admin requests endpoint returned: " + res.status);
+          const payload = await res.json().catch(() => ({}));
+          setRequests([]);
+          setNotice("Failed to load student requests: " + (payload?.message || res.status));
           return;
         }
 
         const data = await res.json();
-        setRequests(Array.isArray(data) ? data : FALLBACK_REQUESTS);
+        setRequests(Array.isArray(data) ? data : []);
       } catch (_err) {
-        setRequests(FALLBACK_REQUESTS);
-        setNotice("Using mock student requests due to API connectivity issues: " + _err.message);
+        setRequests([]);
+        setNotice("Failed to load student requests: " + _err.message);
       }
     };
 
@@ -61,7 +46,9 @@ export default function StudentRequestsPage() {
 
     setLoadingById((prev) => ({ ...prev, [requestId]: true }));
     try {
-      const userId = typeof window !== 'undefined' ? sessionStorage.getItem('userID') : null;
+      const userId = typeof window !== 'undefined'
+        ? (sessionStorage.getItem('userID') || sessionStorage.getItem('userId') || localStorage.getItem('userID') || localStorage.getItem('userId'))
+        : null;
       const headers = { 'Content-Type': 'application/json' };
       if (userId) headers['x-user-id'] = userId;
 
@@ -71,10 +58,14 @@ export default function StudentRequestsPage() {
         body: JSON.stringify({ status: 'Approved', adminNotes: 'Approved from admin dashboard' }),
       });
 
-      if (!res.ok) throw new Error(`Approve failed: ${res.status}`);
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload?.message || `Approve failed (${res.status})`);
+      }
 
       setRequests((prev) => prev.filter((item) => Number(item.RequestID) !== Number(requestId)));
-      setNotice('Event request approved! Draft event created.');
+      const payload = await res.json().catch(() => ({}));
+      setNotice(payload?.message || 'Event request approved.');
     } catch (err) {
       setNotice('Approve failed: ' + err.message);
     } finally {
@@ -88,7 +79,9 @@ export default function StudentRequestsPage() {
 
     setLoadingById((prev) => ({ ...prev, [requestId]: true }));
     try {
-      const userId = typeof window !== 'undefined' ? sessionStorage.getItem('userID') : null;
+      const userId = typeof window !== 'undefined'
+        ? (sessionStorage.getItem('userID') || sessionStorage.getItem('userId') || localStorage.getItem('userID') || localStorage.getItem('userId'))
+        : null;
       const headers = { 'Content-Type': 'application/json' };
       if (userId) headers['x-user-id'] = userId;
 
@@ -98,10 +91,14 @@ export default function StudentRequestsPage() {
         body: JSON.stringify({ status: 'Rejected', adminNotes: reason }),
       });
 
-      if (!res.ok) throw new Error(`Reject failed: ${res.status}`);
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload?.message || `Reject failed (${res.status})`);
+      }
 
       setRequests((prev) => prev.filter((item) => Number(item.RequestID) !== Number(requestId)));
-      setNotice('Event request rejected.');
+      const payload = await res.json().catch(() => ({}));
+      setNotice(payload?.message || 'Event request rejected.');
     } catch (err) {
       setNotice('Reject failed: ' + err.message);
     } finally {
@@ -119,6 +116,10 @@ export default function StudentRequestsPage() {
       {notice && <p className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">{notice}</p>}
 
       <div className="space-y-3">
+        {requests.length === 0 && (
+          <p className="rounded-xl bg-[var(--surface-soft)] px-3 py-3 text-sm text-slate-600">No pending student event requests.</p>
+        )}
+
         {requests.map((row) => (
           <article key={row.RequestID} className="surface-card p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">

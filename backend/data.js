@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const { sql, poolPromise } = require('./db'); // Import everything ONCE at the top
 const { authMiddleware } = require('./middleware/auth'); // Import auth middleware
+const REQUEST_PAYLOAD_PREFIX = '__REQUEST_PAYLOAD__:';
 
 // 1. GET Interests
 router.get('/interests', async (req, res) => {
@@ -73,6 +74,60 @@ router.get('/events', async (req, res) => {
     } catch (err) {
         console.error("Event Fetch Error:", err);
         res.status(500).send(err.message);
+    }
+});
+
+// 2.0b GET Event Details by ID (full detail page)
+router.get('/events/:id', async (req, res) => {
+    const eventId = Number(req.params.id);
+    if (!Number.isInteger(eventId) || eventId <= 0) {
+        return res.status(400).json({ success: false, message: 'Valid event id is required' });
+    }
+
+    try {
+        const pool = await poolPromise;
+        const result = await pool.request()
+            .input('EventID', sql.Int, eventId)
+            .query(`
+                SELECT TOP 1
+                    e.EventID,
+                    e.OrganizerID,
+                    e.Title,
+                    e.Description,
+                    e.EventType,
+                    e.EventDate,
+                    e.EventTime,
+                    e.Venue,
+                    e.Capacity,
+                    e.Status,
+                    e.PosterURL,
+                    e.RegistrationDeadline,
+                    op.OrganizationName AS Organizer,
+                    op.ContactEmail AS OrganizerEmail,
+                    op.Description AS OrganizerDescription,
+                    op.ProfilePictureURL AS OrganizerLogo,
+                    u.Email AS OrganizerAccountEmail,
+                    (
+                        SELECT COUNT(*)
+                        FROM Registrations r
+                        WHERE r.EventID = e.EventID
+                          AND r.Status = 'Confirmed'
+                    ) AS ConfirmedRegistrations
+                FROM Events e
+                JOIN OrganizerProfiles op ON e.OrganizerID = op.UserID
+                JOIN Users u ON op.UserID = u.UserID
+                WHERE e.EventID = @EventID
+            `);
+
+        const event = result.recordset?.[0];
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+
+        return res.json(event);
+    } catch (err) {
+        console.error('Event Detail Fetch Error:', err);
+        return res.status(500).json({ success: false, message: err.message || 'Failed to fetch event details' });
     }
 });
 
@@ -193,6 +248,12 @@ router.post('/events', authMiddleware, async (req, res) => {
     if (!Number.isInteger(parsedCapacity) || parsedCapacity <= 0) {
         return res.status(400).json({ success: false, message: 'capacity must be greater than 0' });
     }
+    if (normalizedPoster && normalizedPoster.length > 255) {
+        return res.status(400).json({
+            success: false,
+            message: 'posterURL is too long (max 255 characters). Please use a shorter hosted URL.',
+        });
+    }
 
     // DB requires RegistrationDeadline. Default to event day start-time so it always satisfies CK_Events_Dates.
     const fallbackDeadlineRaw = `${normalizedEventDate}T00:00:00`;
@@ -238,7 +299,7 @@ router.post('/events', authMiddleware, async (req, res) => {
             .input('Capacity', sql.Int, parsedCapacity)
             .input('RegistrationDeadline', sql.DateTimeOffset, parsedDeadline)
             .input('Status', sql.NVarChar(20), normalizedStatus)
-            .input('PosterURL', sql.NVarChar(255), normalizedPoster)
+            .input('PosterURL', sql.NVarChar(sql.MAX), normalizedPoster)
             .query(`
                 INSERT INTO [dbo].[Events]
                     (OrganizerID, Title, Description, EventType, EventDate, EventTime, Venue, Capacity, RegistrationDeadline, Status, PosterURL)
@@ -256,7 +317,19 @@ router.post('/events', authMiddleware, async (req, res) => {
                     INSERTED.Status,
                     INSERTED.PosterURL
                 VALUES
-                    (@OrganizerID, @Title, @Description, @EventType, @EventDate, CAST(@EventTime AS TIME), @Venue, @Capacity, @RegistrationDeadline, @Status, @PosterURL)
+                    (
+                        @OrganizerID,
+                        @Title,
+                        @Description,
+                        @EventType,
+                        @EventDate,
+                        CAST(@EventTime AS TIME),
+                        @Venue,
+                        @Capacity,
+                        @RegistrationDeadline,
+                        @Status,
+                        @PosterURL
+                    )
             `);
 
         return res.status(201).json({ success: true, event: result.recordset?.[0] || null });
@@ -336,7 +409,88 @@ router.post('/events/unregister', authMiddleware, async (req, res) => {
             return res.status(400).json({ success: false, message });
         }
 
-        return res.json({ success: true, message });
+        // Auto-promote next user from waitlist in FIFO order when a seat is freed.
+        const waitlistPromotion = await pool.request()
+            .input('EventID', sql.Int, Number(eventId))
+            .query(`
+                DECLARE @MaxCap INT;
+                DECLARE @CurrentCount INT;
+                DECLARE @NextWaitlistID INT;
+                DECLARE @NextUserID INT;
+
+                SELECT @MaxCap = Capacity
+                FROM [dbo].[Events]
+                WHERE EventID = @EventID;
+
+                SELECT @CurrentCount = COUNT(*)
+                FROM [dbo].[Registrations]
+                WHERE EventID = @EventID AND Status = 'Confirmed';
+
+                IF @MaxCap IS NULL OR @CurrentCount >= @MaxCap
+                BEGIN
+                    SELECT CAST(0 AS BIT) AS Promoted, CAST(NULL AS INT) AS PromotedUserID;
+                    RETURN;
+                END
+
+                SELECT TOP 1
+                    @NextWaitlistID = WaitlistID,
+                    @NextUserID = UserID
+                FROM [dbo].[RegistrationWaitlist]
+                WHERE EventID = @EventID
+                ORDER BY RequestedAt ASC, WaitlistID ASC;
+
+                IF @NextWaitlistID IS NULL OR @NextUserID IS NULL
+                BEGIN
+                    SELECT CAST(0 AS BIT) AS Promoted, CAST(NULL AS INT) AS PromotedUserID;
+                    RETURN;
+                END
+
+                IF EXISTS (
+                    SELECT 1
+                    FROM [dbo].[Registrations]
+                    WHERE EventID = @EventID AND UserID = @NextUserID AND Status = 'Cancelled'
+                )
+                BEGIN
+                    UPDATE [dbo].[Registrations]
+                    SET
+                        Status = 'Confirmed',
+                        CancelledAt = NULL,
+                        RegistrationDate = SYSDATETIMEOFFSET(),
+                        QRCode = CAST(NEWID() AS NVARCHAR(100))
+                    WHERE EventID = @EventID
+                      AND UserID = @NextUserID
+                      AND Status = 'Cancelled';
+                END
+                ELSE IF NOT EXISTS (
+                    SELECT 1
+                    FROM [dbo].[Registrations]
+                    WHERE EventID = @EventID AND UserID = @NextUserID AND Status <> 'Cancelled'
+                )
+                BEGIN
+                    INSERT INTO [dbo].[Registrations] (EventID, UserID, Status, QRCode)
+                    VALUES (@EventID, @NextUserID, 'Confirmed', CAST(NEWID() AS NVARCHAR(100)));
+                END
+
+                DELETE FROM [dbo].[RegistrationWaitlist]
+                WHERE WaitlistID = @NextWaitlistID;
+
+                EXEC [dbo].[sp_AddNotification]
+                    @UserID = @NextUserID,
+                    @Title = 'Waitlist Update',
+                    @Message = 'A seat became available. You have been moved from waitlist to confirmed registration.',
+                    @EventID = @EventID;
+
+                SELECT CAST(1 AS BIT) AS Promoted, @NextUserID AS PromotedUserID;
+            `);
+
+        const promoted = Boolean(waitlistPromotion.recordset?.[0]?.Promoted);
+
+        return res.json({
+            success: true,
+            message: promoted ? `${message} Next waitlisted student has been auto-registered.` : message,
+            waitlistPromoted: promoted,
+            promotedUserId: waitlistPromotion.recordset?.[0]?.PromotedUserID || null,
+        });
     } catch (err) {
         return res.status(400).json({ success: false, message: err.message });
     }
@@ -453,6 +607,143 @@ router.get('/notifications/:userId', async (req, res) => {
 
 // 2.1 DELETE Event (Organizer dashboard) - Changed to Soft Delete
 // Requires authentication - organizer can only delete their own events
+router.put('/events/:id', authMiddleware, async (req, res) => {
+    const eventId = Number(req.params.id);
+    const requesterId = req.user?.UserID;
+    const requesterRole = String(req.user?.Role || '').toLowerCase();
+
+    if (!requesterId) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+
+    if (!Number.isInteger(eventId) || eventId <= 0) {
+        return res.status(400).json({ success: false, message: 'Invalid event id' });
+    }
+
+    const {
+        title,
+        description,
+        eventType,
+        eventDate,
+        eventTime,
+        venue,
+        capacity,
+        registrationDeadline,
+        posterURL,
+        status,
+    } = req.body || {};
+
+    const normalizeDate = (value) => {
+        if (!value) return null;
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) return null;
+        return parsed.toISOString().slice(0, 10);
+    };
+
+    const normalizeTime = (value) => {
+        if (!value) return null;
+        const raw = String(value).trim().toLowerCase();
+        const hhmm = raw.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+        if (hhmm) {
+            const h = Number(hhmm[1]);
+            const m = Number(hhmm[2]);
+            const s = Number(hhmm[3] || 0);
+            if (h > 23 || m > 59 || s > 59) return null;
+            return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        }
+        return null;
+    };
+
+    const parsedCapacity = Number(capacity);
+    const normalizedTitle = String(title || '').trim();
+    const normalizedType = String(eventType || '').trim();
+    const normalizedDate = normalizeDate(eventDate);
+    const normalizedTime = normalizeTime(eventTime);
+    const normalizedVenue = String(venue || '').trim() || null;
+    const normalizedDescription = description === undefined ? null : (String(description || '').trim() || null);
+    const normalizedStatus = String(status || '').trim() || 'Draft';
+    const normalizedPoster = String(posterURL || '').trim() || null;
+    const normalizedDeadline = registrationDeadline ? new Date(registrationDeadline) : null;
+
+    if (!normalizedTitle || !normalizedType || !normalizedDate || !normalizedTime) {
+        return res.status(400).json({
+            success: false,
+            message: 'title, eventType, eventDate and eventTime are required with valid values',
+        });
+    }
+
+    if (!Number.isInteger(parsedCapacity) || parsedCapacity <= 0) {
+        return res.status(400).json({ success: false, message: 'capacity must be greater than 0' });
+    }
+
+    if (!normalizedDeadline || Number.isNaN(normalizedDeadline.getTime())) {
+        return res.status(400).json({ success: false, message: 'registrationDeadline must be a valid date-time' });
+    }
+    if (normalizedPoster && normalizedPoster.length > 255) {
+        return res.status(400).json({
+            success: false,
+            message: 'posterURL is too long (max 255 characters). Please use a shorter hosted URL.',
+        });
+    }
+
+    if (normalizedDeadline.toISOString().slice(0, 10) > normalizedDate) {
+        return res.status(400).json({ success: false, message: 'Registration deadline date cannot be after event date.' });
+    }
+
+    try {
+        const pool = await poolPromise;
+
+        const eventCheck = await pool.request()
+            .input('EventID', sql.Int, eventId)
+            .query('SELECT TOP 1 EventID, OrganizerID FROM Events WHERE EventID = @EventID');
+
+        const event = eventCheck.recordset?.[0];
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+
+        if (requesterRole !== 'admin' && Number(event.OrganizerID) !== Number(requesterId)) {
+            return res.status(403).json({ success: false, message: 'You can only edit your own events' });
+        }
+
+        const result = await pool.request()
+            .input('EventID', sql.Int, eventId)
+            .input('Title', sql.NVarChar(200), normalizedTitle)
+            .input('Description', sql.NVarChar(sql.MAX), normalizedDescription)
+            .input('EventType', sql.NVarChar(20), normalizedType)
+            .input('EventDate', sql.Date, normalizedDate)
+            .input('EventTime', sql.NVarChar(20), normalizedTime)
+            .input('Venue', sql.NVarChar(150), normalizedVenue)
+            .input('Capacity', sql.Int, parsedCapacity)
+            .input('RegistrationDeadline', sql.DateTimeOffset, normalizedDeadline)
+            .input('Status', sql.NVarChar(20), normalizedStatus)
+            .input('PosterURL', sql.NVarChar(sql.MAX), normalizedPoster)
+            .query(`
+                UPDATE Events
+                SET
+                    Title = @Title,
+                    Description = @Description,
+                    EventType = @EventType,
+                    EventDate = @EventDate,
+                    EventTime = CAST(@EventTime AS TIME),
+                    Venue = @Venue,
+                    Capacity = @Capacity,
+                    RegistrationDeadline = @RegistrationDeadline,
+                    Status = @Status,
+                    PosterURL = @PosterURL,
+                    UpdatedAt = SYSDATETIMEOFFSET()
+                WHERE EventID = @EventID;
+
+                SELECT TOP 1 * FROM Events WHERE EventID = @EventID;
+            `);
+
+        return res.json({ success: true, event: result.recordset?.[0] || null });
+    } catch (err) {
+        console.error('Update Event Error:', err);
+        return res.status(500).json({ success: false, message: err.message || 'Failed to update event' });
+    }
+});
+
 router.delete('/events/:id', authMiddleware, async (req, res) => {
     const eventId = Number(req.params.id);
     const userId = req.user?.UserID;
@@ -711,6 +1002,18 @@ router.post('/events/request', authMiddleware, async (req, res) => {
 
     try {
         const pool = await poolPromise;
+        const requestPayload = {
+            title,
+            description,
+            eventType,
+            eventDate,
+            eventTime,
+            venue,
+            capacity,
+            registrationDeadline,
+            posterURL,
+        };
+        const requestPayloadString = `${REQUEST_PAYLOAD_PREFIX}${JSON.stringify(requestPayload)}`;
 
         // Insert event request into EventRequests table
         const insertResult = await pool.request()
@@ -718,9 +1021,10 @@ router.post('/events/request', authMiddleware, async (req, res) => {
             .input('Title', sql.NVarChar(200), title)
             .input('Description', sql.NVarChar(sql.MAX), description || null)
             .input('SuggestedDate', sql.Date, eventDate)
+            .input('AdminNotes', sql.NVarChar(sql.MAX), requestPayloadString)
             .query(`
-                INSERT INTO EventRequests (StudentID, Title, Description, SuggestedDate, Status, SubmittedAt)
-                VALUES (@StudentID, @Title, @Description, @SuggestedDate, 'Pending', SYSDATETIMEOFFSET());
+                INSERT INTO EventRequests (StudentID, Title, Description, SuggestedDate, Status, SubmittedAt, AdminNotes)
+                VALUES (@StudentID, @Title, @Description, @SuggestedDate, 'Pending', SYSDATETIMEOFFSET(), @AdminNotes);
                 SELECT SCOPE_IDENTITY() AS RequestID
             `);
 
@@ -738,20 +1042,127 @@ router.post('/events/request', authMiddleware, async (req, res) => {
     }
 });
 
-// GET Registrations for a specific Event (Organizer side)
-router.get('/organizer/registrations/:eventId', async (req, res) => {
+// GET Student Event Requests (student/admin view)
+// Reconciles legacy pending requests that already became events before status-update fixes.
+router.get('/events/requests/:userId', authMiddleware, async (req, res) => {
+    const targetUserId = Number(req.params.userId);
+    const requesterId = req.user?.UserID;
+    const requesterRole = String(req.user?.Role || '').toLowerCase();
+
+    if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+        return res.status(400).json({ success: false, message: 'Valid userId is required' });
+    }
+
+    if (requesterRole !== 'admin' && Number(requesterId) !== targetUserId) {
+        return res.status(403).json({ success: false, message: 'You can only view your own requests' });
+    }
+
     try {
         const pool = await poolPromise;
-        // Verify owner first if you have time, otherwise simple fetch:
+
+        // Legacy recovery: mark stale pending requests as approved when an event with same title/date exists.
+        await pool.request()
+            .input('StudentID', sql.Int, targetUserId)
+            .query(`
+                UPDATE er
+                SET er.Status = 'Approved'
+                FROM EventRequests er
+                WHERE er.StudentID = @StudentID
+                  AND er.Status = 'Pending'
+                  AND EXISTS (
+                      SELECT 1
+                      FROM Events e
+                      WHERE e.Title = er.Title
+                        AND e.EventDate = er.SuggestedDate
+                        AND e.Status IN ('Published', 'Draft', 'Completed')
+                  )
+            `);
+
         const result = await pool.request()
-            .input('EventID', sql.Int, req.params.eventId)
-            .query(`SELECT r.*, u.Email 
-                    FROM [dbo].[Registrations] r
-                    JOIN [dbo].[Users] u ON r.UserID = u.UserID
-                    WHERE r.EventID = @EventID`);
-        res.json(result.recordset);
+            .input('StudentID', sql.Int, targetUserId)
+            .query(`
+                SELECT
+                    er.RequestID,
+                    er.StudentID,
+                    er.Title,
+                    er.Description,
+                    er.SuggestedDate,
+                    er.Status,
+                    er.SubmittedAt,
+                    CASE
+                        WHEN LEFT(COALESCE(er.AdminNotes, ''), 20) = '__REQUEST_PAYLOAD__:' THEN NULL
+                        ELSE er.AdminNotes
+                    END AS AdminNotes
+                FROM EventRequests er
+                WHERE er.StudentID = @StudentID
+                ORDER BY er.SubmittedAt DESC
+            `);
+
+        return res.json(result.recordset || []);
     } catch (err) {
-        res.status(500).send(err.message);
+        console.error('Student Requests Fetch Error:', err);
+        return res.status(500).json({ success: false, message: err.message || 'Failed to fetch requests' });
+    }
+});
+
+// GET Registrations for a specific Event (Organizer side)
+// Requires authentication - organizer can only view their own event registrations
+router.get('/organizer/registrations/:eventId', authMiddleware, async (req, res) => {
+    const eventId = Number(req.params.eventId);
+    const requesterId = req.user?.UserID;
+    const requesterRole = String(req.user?.Role || '').toLowerCase();
+
+    if (!Number.isInteger(eventId) || eventId <= 0) {
+        return res.status(400).json({ success: false, message: 'Valid eventId is required' });
+    }
+
+    if (!requesterId) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+
+    try {
+        const pool = await poolPromise;
+
+        const eventResult = await pool.request()
+            .input('EventID', sql.Int, eventId)
+            .query(`
+                SELECT TOP 1 EventID, OrganizerID
+                FROM [dbo].[Events]
+                WHERE EventID = @EventID
+            `);
+
+        const eventRow = eventResult.recordset?.[0];
+        if (!eventRow) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+
+        if (requesterRole !== 'admin' && Number(eventRow.OrganizerID) !== Number(requesterId)) {
+            return res.status(403).json({ success: false, message: 'You can only view registrations for your own events' });
+        }
+
+        const result = await pool.request()
+            .input('EventID', sql.Int, eventId)
+            .query(`
+                SELECT
+                    r.RegistrationID,
+                    r.EventID,
+                    r.UserID,
+                    r.Status,
+                    r.RegistrationDate,
+                    r.CancelledAt,
+                    u.Email,
+                    sp.FirstName,
+                    sp.LastName
+                FROM [dbo].[Registrations] r
+                JOIN [dbo].[Users] u ON r.UserID = u.UserID
+                LEFT JOIN [dbo].[StudentProfiles] sp ON r.UserID = sp.UserID
+                WHERE r.EventID = @EventID
+                ORDER BY r.RegistrationDate DESC
+            `);
+
+        return res.json(result.recordset);
+    } catch (err) {
+        return res.status(500).json({ success: false, message: err.message || 'Failed to fetch registrations' });
     }
 });
 

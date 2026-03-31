@@ -2,6 +2,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
+import CreateTeamModal from "@/components/team/CreateTeamModal";
+import TeamManagementCard from "@/components/team/TeamManagementCard";
+import TeamInviteAction from "@/components/team/TeamInviteAction";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 const DEFAULT_EVENT_POSTER = "/images/default-event-poster.png";
@@ -15,6 +18,11 @@ export default function ViewEventPage() {
   const [isRegistered, setIsRegistered] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [showCreateTeamModal, setShowCreateTeamModal] = useState(false);
+  const [teamData, setTeamData] = useState(null);
+  const [pendingInvite, setPendingInvite] = useState(null);
+  const [isLoadingTeam, setIsLoadingTeam] = useState(false);
+  const [teamError, setTeamError] = useState("");
   const userId = typeof window !== "undefined"
     ? (sessionStorage.getItem("userId") || sessionStorage.getItem("userID") || localStorage.getItem("userId") || localStorage.getItem("userID") || "")
     : "";
@@ -89,6 +97,59 @@ export default function ViewEventPage() {
 
     loadEventAndStatus();
   }, [eventId, userId]);
+
+  // Fetch team data when registered
+  useEffect(() => {
+    const fetchTeamData = async () => {
+      if (!isRegistered || !eventId || !userId) return;
+
+      setIsLoadingTeam(true);
+      setTeamError("");
+
+      try {
+        const numericUserId = Number(userId);
+        const numericEventId = Number(eventId);
+
+        // Fetch user's accepted team for this event
+        const teamResponse = await fetch(
+          `${API_BASE_URL}/api/teams/user/${numericUserId}?eventId=${numericEventId}`,
+          {
+            headers: { "x-user-id": String(numericUserId) },
+          }
+        );
+
+        // Fetch user's pending invite for this event
+        const inviteResponse = await fetch(
+          `${API_BASE_URL}/api/teams/invites/pending/${numericUserId}?eventId=${numericEventId}`,
+          {
+            headers: { "x-user-id": String(numericUserId) },
+          }
+        );
+
+        if (teamResponse.ok) {
+          const data = await teamResponse.json();
+          setTeamData(data || null);
+        } else {
+          setTeamData(null);
+        }
+
+        if (inviteResponse.ok) {
+          const invitePayload = await inviteResponse.json();
+          setPendingInvite(invitePayload?.invite || null);
+        } else {
+          setPendingInvite(null);
+        }
+      } catch (err) {
+        console.error("Failed to fetch team data:", err);
+        setTeamData(null);
+        setPendingInvite(null);
+      } finally {
+        setIsLoadingTeam(false);
+      }
+    };
+
+    fetchTeamData();
+  }, [isRegistered, eventId, userId]);
 
   async function handleUnregister() {
     const numericUserId = Number(userId);
@@ -213,11 +274,73 @@ export default function ViewEventPage() {
               )}
             </div>
 
+            {/* Team UI for Competition Events */}
+            {isRegistered && (eventData.eventType || eventData.EventType || "").toLowerCase() === "competition" && (
+              <div className="mt-4">
+                {isLoadingTeam ? (
+                  <div className="p-4 text-center text-slate-600">Loading team info...</div>
+                ) : pendingInvite?.teamId ? (
+                  <TeamInviteAction
+                    teamId={pendingInvite.teamId}
+                    teamName={pendingInvite.teamName}
+                    eventId={Number(eventId)}
+                    userId={Number(userId)}
+                    onInviteResponded={(action) => {
+                      setPendingInvite(null);
+                      if (action === "accepted") {
+                        setIsLoadingTeam(true);
+                        fetch(`${API_BASE_URL}/api/teams/user/${Number(userId)}?eventId=${Number(eventId)}`, {
+                          headers: { "x-user-id": String(Number(userId)) },
+                        })
+                          .then((res) => (res.ok ? res.json() : null))
+                          .then((data) => setTeamData(data))
+                          .finally(() => setIsLoadingTeam(false));
+                      }
+                    }}
+                  />
+                ) : teamData?.id ? (
+                  <>
+                    <TeamManagementCard
+                      teamId={teamData.id}
+                      teamName={teamData.name}
+                      leaderId={teamData.leaderId}
+                      leaderName={teamData.leaderName}
+                      userId={Number(userId)}
+                      eventId={Number(eventId)}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <div className="mt-4 flex gap-2">
+                      <button
+                        onClick={() => setShowCreateTeamModal(true)}
+                        className="flex-1 rounded-lg bg-gradient-to-r from-[var(--brand)] to-[var(--brand-strong)] px-4 py-2 text-white font-semibold hover:shadow-lg"
+                      >
+                        ⚡ Form a Team
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
             {message && <p className="mt-3 text-sm text-slate-700">{message}</p>}
           </div>
         </div>
         </div>
       </div>
+
+      <CreateTeamModal
+        isOpen={showCreateTeamModal}
+        onClose={() => setShowCreateTeamModal(false)}
+        eventId={Number(eventId)}
+        userId={Number(userId)}
+        onTeamCreated={(teamId) => {
+          setPendingInvite(null);
+          setTeamData({ id: teamId, name: "", leaderId: Number(userId) });
+          setIsLoadingTeam(false);
+        }}
+      />
     </main>
   );
 }

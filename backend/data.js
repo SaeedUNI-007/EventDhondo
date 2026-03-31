@@ -17,6 +17,46 @@ router.get('/interests', async (req, res) => {
     }
 });
 
+// 1a. GET Users by email (for team invitations)
+router.get('/users', async (req, res) => {
+    const email = req.query.email;
+
+    if (!email || !String(email).trim()) {
+        return res.status(400).json({ success: false, message: 'Email is required' });
+    }
+
+    try {
+        const pool = await poolPromise;
+        const result = await pool.request()
+            .input('Email', sql.NVarChar(255), String(email).trim().toLowerCase())
+            .query(`
+                SELECT TOP 1
+                    u.UserID as id,
+                    u.UserID as userId,
+                    u.Email as email,
+                    COALESCE(
+                        CONCAT(sp.FirstName, ' ', sp.LastName),
+                        op.OrganizationName,
+                        u.Email
+                    ) as name,
+                    u.Role as role
+                FROM Users u
+                LEFT JOIN StudentProfiles sp ON u.UserID = sp.UserID
+                LEFT JOIN OrganizerProfiles op ON u.UserID = op.UserID
+                WHERE LOWER(u.Email) = @Email
+            `);
+
+        if (result.recordset && result.recordset.length > 0) {
+            return res.json(result.recordset[0]);
+        }
+
+        return res.status(404).json({ success: false, message: 'User not found' });
+    } catch (err) {
+        console.error("Get User by Email Error:", err);
+        return res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 // 2. GET Events (Advanced Search & Filter)
 router.get('/events', async (req, res) => {
     try {
@@ -675,7 +715,6 @@ router.put('/events/:id', authMiddleware, async (req, res) => {
     if (!Number.isInteger(parsedCapacity) || parsedCapacity <= 0) {
         return res.status(400).json({ success: false, message: 'capacity must be greater than 0' });
     }
-
     if (!normalizedDeadline || Number.isNaN(normalizedDeadline.getTime())) {
         return res.status(400).json({ success: false, message: 'registrationDeadline must be a valid date-time' });
     }

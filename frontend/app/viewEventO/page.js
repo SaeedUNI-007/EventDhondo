@@ -15,7 +15,9 @@ export default function ViewEventOrg() {
   const safeReturnTo = returnTo && returnTo.startsWith("/") ? returnTo : "/dashboardO";
   const [eventData, setEventData] = useState(null);
   const [registrations, setRegistrations] = useState([]);
+  const [teams, setTeams] = useState([]);
   const [loadingRegistrations, setLoadingRegistrations] = useState(false);
+  const [loadingTeams, setLoadingTeams] = useState(false);
   const [message, setMessage] = useState("");
   const userId = typeof window !== "undefined"
     ? (sessionStorage.getItem("userId") || sessionStorage.getItem("userID") || localStorage.getItem("userId") || localStorage.getItem("orgId") || "")
@@ -105,8 +107,39 @@ export default function ViewEventOrg() {
       }
     };
 
+    const loadTeams = async () => {
+      if (!eventId) return;
+      if (!Number.isInteger(Number(userId))) {
+        setTeams([]);
+        return;
+      }
+
+      try {
+        setLoadingTeams(true);
+        const res = await fetch(`${API_BASE_URL}/api/teams/event/${encodeURIComponent(eventId)}`, {
+          headers: {
+            "Content-Type": "application/json",
+            "x-user-id": String(userId),
+          },
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data?.message || `Failed to load teams (${res.status})`);
+        }
+
+        setTeams(Array.isArray(data?.teams) ? data.teams : []);
+      } catch (err) {
+        setTeams([]);
+        setMessage(err?.message || "Could not load teams.");
+      } finally {
+        setLoadingTeams(false);
+      }
+    };
+
     loadEvent();
     loadRegistrations();
+    loadTeams();
   }, [eventId, userId]);
 
   if (!eventId) return <main className="min-h-screen shell"><div className="p-6">No event specified.</div></main>;
@@ -233,6 +266,56 @@ export default function ViewEventOrg() {
                 </div>
               )}
             </div>
+
+            {(eventData.eventType || eventData.EventType || "").toLowerCase() === "competition" && (
+              <div className="mt-6">
+                <h3 className="mb-2 text-lg font-semibold">Teams Created</h3>
+                {loadingTeams ? (
+                  <p className="text-sm text-slate-600">Loading teams...</p>
+                ) : teams.length === 0 ? (
+                  <p className="text-sm text-slate-600">No teams created yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {teams.map((team) => (
+                      <div key={team.teamId} className="rounded-xl border border-[var(--stroke)] bg-white p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-bold text-slate-900">{team.teamName}</p>
+                            <p className="text-xs text-slate-600">Leader: {team.leaderName || "Unknown"}</p>
+                          </div>
+                          <span className="rounded-full bg-[var(--brand)]/10 px-2 py-1 text-xs font-semibold text-[var(--brand)]">
+                            {team.members?.length || 0} members
+                          </span>
+                        </div>
+
+                        <div className="mt-3 overflow-auto rounded-md border border-[var(--stroke)]">
+                          <table className="min-w-full text-sm">
+                            <thead>
+                              <tr className="border-b border-slate-200 bg-slate-50 text-left text-slate-600">
+                                <th className="px-3 py-2">Member</th>
+                                <th className="px-3 py-2">Email</th>
+                                <th className="px-3 py-2">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(team.members || []).map((member) => (
+                                <tr key={`${team.teamId}-${member.userId}`} className="border-b border-slate-100 last:border-none">
+                                  <td className="px-3 py-2">
+                                    {member.name || "Unknown"} {member.isLeader ? "(Leader)" : ""}
+                                  </td>
+                                  <td className="px-3 py-2">{member.email || "-"}</td>
+                                  <td className="px-3 py-2">{member.status || "Pending"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
         </div>

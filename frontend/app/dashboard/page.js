@@ -83,6 +83,7 @@ export default function DashboardStudent() {
 
   const NAV_ITEMS = [
     { label: 'Dashboard', href: '/dashboard' },
+    { label: 'QR Code', href: '/qr-code' },
     { label: 'Achievements', href: '/achievementsU' },
     { label: 'Add Event', href: '/event' },
     { label: 'Remove Event', href: '/removeEvent' },

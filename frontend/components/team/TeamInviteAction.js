@@ -94,8 +94,8 @@ export default function TeamInviteAction({
             🎉 Team Invitation
           </h4>
           <p className="text-sm text-slate-700 mb-4">
-            You've been invited to join team{" "}
-            <span className="font-semibold">"{teamName}"</span>. Do you want to accept?
+            You&apos;ve been invited to join team{" "}
+            <span className="font-semibold">&ldquo;{teamName}&rdquo;</span>. Do you want to accept?
           </p>
 
           {error && (

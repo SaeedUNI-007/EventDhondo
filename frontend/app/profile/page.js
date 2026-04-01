@@ -312,6 +312,14 @@ export default function ProfilePage() {
                 )}
                 <Link href="/" className="rounded-md px-4 py-2 border border-[var(--stroke)] bg-white text-sm font-semibold hover:bg-[var(--surface-soft)]">Cancel</Link>
               </div>
+
+              <div className="mt-6 rounded-xl border border-[var(--stroke)] bg-white p-4">
+                <h3 className="text-base font-bold text-slate-900">Attendance QR</h3>
+                <p className="mt-2 text-sm text-slate-600">Use your single QR from the QR Code tab in dashboard for all event check-ins.</p>
+                <Link href="/qr-code" className="mt-3 inline-block rounded border border-[var(--stroke)] bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-[var(--surface-soft)]">
+                  Open QR Code Page
+                </Link>
+              </div>
             </div>
           </div>
         </form>

@@ -84,9 +84,10 @@ export default function ViewEventPage() {
           const regData = await regRes.json().catch(() => []);
 
           if (regRes.ok && Array.isArray(regData)) {
-            const active = regData.some(
+            const activeRow = regData.find(
               (r) => String(r.EventID || r.eventId) === String(eventId) && String(r.Status || "").toLowerCase() !== "cancelled"
             );
+            const active = Boolean(activeRow);
             setIsRegistered(active);
           }
         }
@@ -273,6 +274,15 @@ export default function ViewEventPage() {
                 </button>
               )}
             </div>
+
+            {isRegistered && (
+              <div className="mt-4 rounded-lg border border-[var(--stroke)] bg-white p-3">
+                <h3 className="font-semibold text-slate-800">Check-In QR</h3>
+                <p className="mt-2 text-sm text-slate-600">
+                  Use the QR Code tab in your student dashboard for attendance check-in.
+                </p>
+              </div>
+            )}
 
             {/* Team UI for Competition Events */}
             {isRegistered && (eventData.eventType || eventData.EventType || "").toLowerCase() === "competition" && (

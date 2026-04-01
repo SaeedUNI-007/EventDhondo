@@ -63,7 +63,8 @@ CREATE TABLE [StudentProfiles] (
     [LastName] NVARCHAR(50) NOT NULL,
     [Department] NVARCHAR(100),
     [YearOfStudy] INT,
-    [ProfilePictureURL] NVARCHAR(255),
+    [DateOfBirth] DATE NULL,
+    [ProfilePictureURL] NVARCHAR(MAX),
     FOREIGN KEY ([UserID]) REFERENCES [Users]([UserID]) ON DELETE CASCADE
 );
 
@@ -73,16 +74,39 @@ ADD [LinkedInURL] NVARCHAR(255) NULL,
     [GitHubURL] NVARCHAR(255) NULL;
 GO
 
+IF COL_LENGTH('dbo.StudentProfiles', 'DateOfBirth') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[StudentProfiles]
+    ADD [DateOfBirth] DATE NULL;
+END
+GO
+
+IF COL_LENGTH('dbo.StudentProfiles', 'ProfilePictureURL') IS NOT NULL
+   AND COL_LENGTH('dbo.StudentProfiles', 'ProfilePictureURL') <> -1
+BEGIN
+    ALTER TABLE [dbo].[StudentProfiles]
+    ALTER COLUMN [ProfilePictureURL] NVARCHAR(MAX) NULL;
+END
+GO
+
 -- Extended profile for users with the 'Organizer' role (societies/clubs).
 CREATE TABLE [OrganizerProfiles] (
     [UserID] INT PRIMARY KEY,
     [OrganizationName] NVARCHAR(150) NOT NULL UNIQUE,
     [Description] NVARCHAR(MAX),
     [ContactEmail] NVARCHAR(100) NOT NULL,
-    [ProfilePictureURL] NVARCHAR(255),
+    [ProfilePictureURL] NVARCHAR(MAX),
     [VerificationStatus] NVARCHAR(10) NOT NULL DEFAULT 'Pending' CHECK ([VerificationStatus] IN ('Pending', 'Verified', 'Rejected')),
     FOREIGN KEY ([UserID]) REFERENCES [Users]([UserID]) ON DELETE CASCADE
 );
+
+IF COL_LENGTH('dbo.OrganizerProfiles', 'ProfilePictureURL') IS NOT NULL
+   AND COL_LENGTH('dbo.OrganizerProfiles', 'ProfilePictureURL') <> -1
+BEGIN
+    ALTER TABLE [dbo].[OrganizerProfiles]
+    ALTER COLUMN [ProfilePictureURL] NVARCHAR(MAX) NULL;
+END
+GO
 
 -- Lookup table for user interests.
 CREATE TABLE [Interests] (
@@ -178,7 +202,7 @@ CREATE TABLE [Registrations] (
     [UserID] INT NOT NULL,
     [RegistrationDate] DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
     [Status] NVARCHAR(15) NOT NULL DEFAULT 'Confirmed' CHECK ([Status] IN ('Confirmed', 'Cancelled', 'Attended', 'Waitlisted')),
-    [QRCode] NVARCHAR(255) UNIQUE, -- Stores unique QR code data
+    [QRCode] NVARCHAR(255), -- Stores student EDUQR token (can repeat across events for same user)
     [CancelledAt] DATETIMEOFFSET,
     UNIQUE ([EventID], [UserID]),
     FOREIGN KEY ([EventID]) REFERENCES [Events]([EventID]) ON DELETE CASCADE,

@@ -24,7 +24,7 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body className={`${manrope.variable} ${sora.variable}`}>
+      <body suppressHydrationWarning className={`${manrope.variable} ${sora.variable}`}>
         {children}
       </body>
     </html>

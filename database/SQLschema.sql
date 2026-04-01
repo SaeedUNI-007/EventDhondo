@@ -15,30 +15,30 @@ USE [EventDhondo];
 GO
 
 
-DROP TABLE [ReviewResponses];
-DROP TABLE [EventReviews];
-DROP TABLE [NotificationPreferences];
-DROP TABLE [Notifications];
-DROP TABLE [Certificates];
-DROP TABLE [StudentAchievements];
-DROP TABLE [EventSkillMapping];
-DROP TABLE [Skills];
-DROP TABLE [TeamMembers];
-DROP TABLE [Teams];
-DROP TABLE [Attendance];
-DROP TABLE [RegistrationWaitlist];
-DROP TABLE [Registrations];
-DROP TABLE [EventRequests];
-DROP TABLE [EventTagMapping];
-DROP TABLE [EventTags];
-DROP TABLE [EventCategoryMapping];
-DROP TABLE [EventCategories];
-DROP TABLE [Events];
-DROP TABLE [UserInterests];
-DROP TABLE [Interests];
-DROP TABLE [OrganizerProfiles];
-DROP TABLE [StudentProfiles];
-DROP TABLE [Users];
+DROP TABLE IF EXISTS [ReviewResponses];
+DROP TABLE IF EXISTS [EventReviews];
+DROP TABLE IF EXISTS [NotificationPreferences];
+DROP TABLE IF EXISTS [Notifications];
+DROP TABLE IF EXISTS [Certificates];
+DROP TABLE IF EXISTS [StudentAchievements];
+DROP TABLE IF EXISTS [EventSkillMapping];
+DROP TABLE IF EXISTS [Skills];
+DROP TABLE IF EXISTS [TeamMembers];
+DROP TABLE IF EXISTS [Teams];
+DROP TABLE IF EXISTS [Attendance];
+DROP TABLE IF EXISTS [RegistrationWaitlist];
+DROP TABLE IF EXISTS [Registrations];
+DROP TABLE IF EXISTS [EventRequests];
+DROP TABLE IF EXISTS [EventTagMapping];
+DROP TABLE IF EXISTS [EventTags];
+DROP TABLE IF EXISTS [EventCategoryMapping];
+DROP TABLE IF EXISTS [EventCategories];
+DROP TABLE IF EXISTS [Events];
+DROP TABLE IF EXISTS [UserInterests];
+DROP TABLE IF EXISTS [Interests];
+DROP TABLE IF EXISTS [OrganizerProfiles];
+DROP TABLE IF EXISTS [StudentProfiles];
+DROP TABLE IF EXISTS [Users];
 
 GO
 
@@ -63,9 +63,31 @@ CREATE TABLE [StudentProfiles] (
     [LastName] NVARCHAR(50) NOT NULL,
     [Department] NVARCHAR(100),
     [YearOfStudy] INT,
-    [ProfilePictureURL] NVARCHAR(255),
+    [DateOfBirth] DATE NULL,
+    [ProfilePictureURL] NVARCHAR(MAX),
     FOREIGN KEY ([UserID]) REFERENCES [Users]([UserID]) ON DELETE CASCADE
 );
+
+USE [EventDhondo];
+ALTER TABLE [dbo].[StudentProfiles] 
+ADD [LinkedInURL] NVARCHAR(255) NULL,
+    [GitHubURL] NVARCHAR(255) NULL;
+GO
+
+IF COL_LENGTH('dbo.StudentProfiles', 'DateOfBirth') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[StudentProfiles]
+    ADD [DateOfBirth] DATE NULL;
+END
+GO
+
+IF COL_LENGTH('dbo.StudentProfiles', 'ProfilePictureURL') IS NOT NULL
+   AND COL_LENGTH('dbo.StudentProfiles', 'ProfilePictureURL') <> -1
+BEGIN
+    ALTER TABLE [dbo].[StudentProfiles]
+    ALTER COLUMN [ProfilePictureURL] NVARCHAR(MAX) NULL;
+END
+GO
 
 -- Extended profile for users with the 'Organizer' role (societies/clubs).
 CREATE TABLE [OrganizerProfiles] (
@@ -73,10 +95,18 @@ CREATE TABLE [OrganizerProfiles] (
     [OrganizationName] NVARCHAR(150) NOT NULL UNIQUE,
     [Description] NVARCHAR(MAX),
     [ContactEmail] NVARCHAR(100) NOT NULL,
-    [ProfilePictureURL] NVARCHAR(255),
+    [ProfilePictureURL] NVARCHAR(MAX),
     [VerificationStatus] NVARCHAR(10) NOT NULL DEFAULT 'Pending' CHECK ([VerificationStatus] IN ('Pending', 'Verified', 'Rejected')),
     FOREIGN KEY ([UserID]) REFERENCES [Users]([UserID]) ON DELETE CASCADE
 );
+
+IF COL_LENGTH('dbo.OrganizerProfiles', 'ProfilePictureURL') IS NOT NULL
+   AND COL_LENGTH('dbo.OrganizerProfiles', 'ProfilePictureURL') <> -1
+BEGIN
+    ALTER TABLE [dbo].[OrganizerProfiles]
+    ALTER COLUMN [ProfilePictureURL] NVARCHAR(MAX) NULL;
+END
+GO
 
 -- Lookup table for user interests.
 CREATE TABLE [Interests] (
@@ -172,7 +202,7 @@ CREATE TABLE [Registrations] (
     [UserID] INT NOT NULL,
     [RegistrationDate] DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
     [Status] NVARCHAR(15) NOT NULL DEFAULT 'Confirmed' CHECK ([Status] IN ('Confirmed', 'Cancelled', 'Attended', 'Waitlisted')),
-    [QRCode] NVARCHAR(255) UNIQUE, -- Stores unique QR code data
+    [QRCode] NVARCHAR(255), -- Stores student EDUQR token (can repeat across events for same user)
     [CancelledAt] DATETIMEOFFSET,
     UNIQUE ([EventID], [UserID]),
     FOREIGN KEY ([EventID]) REFERENCES [Events]([EventID]) ON DELETE CASCADE,

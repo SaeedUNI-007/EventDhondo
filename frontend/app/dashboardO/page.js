@@ -128,6 +128,7 @@ export default function DashboardO() {
   const NAV_ITEMS = [
     { label: 'Dashboard', href: '/dashboardO' },
     { label: 'Add Event', href: '/eventO' },
+    { label: 'Attendance', href: '/attendanceO' },
     { label: 'Remove Event', href: '/removeEventO' },
     { label: 'Requests', href: '/requestsO' },
   ];

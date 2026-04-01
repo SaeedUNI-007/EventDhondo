@@ -1,11 +1,15 @@
-﻿USE [EventDhondo];
+USE [EventDhondo];
+GO
+
+IF OBJECT_ID(N'dbo.sp_AddNotification', N'P') IS NULL
+    EXEC(N'CREATE PROCEDURE dbo.sp_AddNotification AS BEGIN SET NOCOUNT ON; RETURN; END');
 GO
 
 IF OBJECT_ID(N'dbo.sp_RegisterStudent', N'P') IS NOT NULL
     DROP PROCEDURE dbo.sp_RegisterStudent;
 GO
 
-CREATE OR ALTER PROCEDURE dbo.sp_RegisterStudent
+CREATE PROCEDURE dbo.sp_RegisterStudent
     @Email NVARCHAR(100),
     @PasswordHash NVARCHAR(255),
     @FirstName NVARCHAR(50),
@@ -37,6 +41,7 @@ BEGIN
         SELECT -1 AS NewUserID, ERROR_MESSAGE() AS Message;
     END CATCH
 END;
+GO
 
 
 -- Procedure to update student profile details
@@ -44,7 +49,7 @@ IF OBJECT_ID(N'dbo.sp_UpdateStudentProfile', N'P') IS NOT NULL
     DROP PROCEDURE dbo.sp_UpdateStudentProfile;
 GO
 
-CREATE OR ALTER PROCEDURE dbo.sp_UpdateStudentProfile
+CREATE PROCEDURE dbo.sp_UpdateStudentProfile
     @UserID INT,
     @FirstName NVARCHAR(50),
     @LastName NVARCHAR(50),
@@ -92,7 +97,7 @@ IF OBJECT_ID(N'dbo.sp_RegisterForEvent', N'P') IS NOT NULL
     DROP PROCEDURE dbo.sp_RegisterForEvent;
 GO
 
-CREATE OR ALTER PROCEDURE dbo.sp_RegisterForEvent
+CREATE PROCEDURE dbo.sp_RegisterForEvent
     @EventID INT,
     @UserID INT
 AS
@@ -196,7 +201,7 @@ IF OBJECT_ID(N'dbo.sp_UnregisterFromEvent', N'P') IS NOT NULL
     DROP PROCEDURE dbo.sp_UnregisterFromEvent;
 GO
 
-CREATE OR ALTER PROCEDURE dbo.sp_UnregisterFromEvent
+CREATE PROCEDURE dbo.sp_UnregisterFromEvent
     @EventID INT,
     @UserID INT
 AS
@@ -226,7 +231,7 @@ IF OBJECT_ID(N'dbo.sp_CreateTeam', N'P') IS NOT NULL
     DROP PROCEDURE dbo.sp_CreateTeam;
 GO
 
-CREATE OR ALTER PROCEDURE dbo.sp_CreateTeam
+CREATE PROCEDURE dbo.sp_CreateTeam
     @EventID INT,
     @TeamName NVARCHAR(100),
     @LeaderID INT
@@ -267,7 +272,7 @@ IF OBJECT_ID(N'dbo.sp_InviteTeamMember', N'P') IS NOT NULL
     DROP PROCEDURE dbo.sp_InviteTeamMember;
 GO
 
-CREATE OR ALTER PROCEDURE dbo.sp_InviteTeamMember
+CREATE PROCEDURE dbo.sp_InviteTeamMember
     @TeamID INT,
     @InvitedUserID INT
 AS
@@ -320,7 +325,7 @@ IF OBJECT_ID(N'dbo.sp_CancelEvent', N'P') IS NOT NULL
     DROP PROCEDURE dbo.sp_CancelEvent;
 GO
 
-CREATE OR ALTER PROCEDURE dbo.sp_CancelEvent
+CREATE PROCEDURE dbo.sp_CancelEvent
     @EventID INT
 AS
 BEGIN
@@ -368,7 +373,7 @@ IF OBJECT_ID(N'dbo.sp_AddNotification', N'P') IS NOT NULL
     DROP PROCEDURE dbo.sp_AddNotification;
 GO
 
-CREATE OR ALTER PROCEDURE dbo.sp_AddNotification
+CREATE PROCEDURE dbo.sp_AddNotification
     @UserID INT,
     @Title NVARCHAR(255),
     @Message NVARCHAR(MAX),
@@ -384,7 +389,7 @@ GO
 
 
 -- [OPERATIONS] Mark Attendance via QR Scan
-CREATE OR ALTER PROCEDURE sp_MarkAttendance
+CREATE PROCEDURE sp_MarkAttendance
     @QRCode NVARCHAR(255), @AdminID INT
 AS
 BEGIN
@@ -393,13 +398,12 @@ BEGIN
     IF @RegID IS NULL THROW 50002, 'Invalid QR Code', 1;
 
     INSERT INTO Attendance (RegistrationID, CheckInMethod, VerifiedBy) VALUES (@RegID, 'QR_Scan', @AdminID);
-    UPDATE Registrations SET Status = 'Attended' WHERE RegistrationID = @RegID;
     SELECT 'Attendance Marked' AS Message;
 END;
 GO
 
 -- [FEEDBACK] Submit Review (Only if Attended)
-CREATE OR ALTER PROCEDURE sp_AddReview
+CREATE PROCEDURE sp_AddReview
     @EventID INT, @UserID INT, @Rating INT, @Text NVARCHAR(MAX)
 AS
 BEGIN
@@ -410,7 +414,7 @@ END;
 GO
 
 -- [PORTFOLIO] Add Achievement (1st/2nd/3rd Place)
-CREATE OR ALTER PROCEDURE sp_AddAchievement
+CREATE PROCEDURE sp_AddAchievement
     @UserID INT, @EventID INT, @Position NVARCHAR(50), @Desc NVARCHAR(MAX)
 AS
 BEGIN
@@ -422,7 +426,7 @@ END;
 GO
 
 -- [AUTH] Register Organizer (Societies/Clubs)
-CREATE OR ALTER PROCEDURE sp_RegisterOrganizer
+CREATE PROCEDURE sp_RegisterOrganizer
     @Email NVARCHAR(100), @PasswordHash NVARCHAR(255), @OrgName NVARCHAR(150), @Desc NVARCHAR(MAX), @ContactEmail NVARCHAR(100)
 AS
 BEGIN
@@ -443,7 +447,7 @@ END;
 GO
 
 -- [ADMIN] Verify Organizer (Feature 1)
-CREATE OR ALTER PROCEDURE sp_VerifyOrganizer
+CREATE PROCEDURE sp_VerifyOrganizer
     @OrganizerID INT, @Status NVARCHAR(10) -- 'Verified' or 'Rejected'
 AS
 BEGIN
@@ -453,7 +457,7 @@ END;
 GO
 
 -- [ADMIN] Reject Organizer Application with Optional Reason
-CREATE OR ALTER PROCEDURE sp_RejectOrganizer
+CREATE PROCEDURE sp_RejectOrganizer
     @OrganizerID INT,
     @RejectionReason NVARCHAR(MAX) = NULL
 AS
@@ -478,7 +482,7 @@ END;
 GO
 
 -- [RECS] Get Events Matching Student Interests
-CREATE OR ALTER PROCEDURE sp_GetRecommendedEvents
+CREATE PROCEDURE sp_GetRecommendedEvents
     @UserID INT
 AS
 BEGIN
@@ -491,7 +495,7 @@ END;
 GO
 
 -- [UTIL] Mark Notification as Read
-CREATE OR ALTER PROCEDURE sp_ReadNotification
+CREATE PROCEDURE sp_ReadNotification
     @NotificationID BIGINT
 AS
 BEGIN

@@ -1,6 +1,10 @@
 USE [EventDhondo];
 GO
 
+IF OBJECT_ID(N'dbo.sp_AddNotification', N'P') IS NULL
+    EXEC(N'CREATE PROCEDURE dbo.sp_AddNotification AS BEGIN SET NOCOUNT ON; RETURN; END');
+GO
+
 IF OBJECT_ID(N'dbo.sp_RegisterStudent', N'P') IS NOT NULL
     DROP PROCEDURE dbo.sp_RegisterStudent;
 GO
@@ -37,6 +41,7 @@ BEGIN
         SELECT -1 AS NewUserID, ERROR_MESSAGE() AS Message;
     END CATCH
 END;
+GO
 
 
 -- Procedure to update student profile details
@@ -393,7 +398,6 @@ BEGIN
     IF @RegID IS NULL THROW 50002, 'Invalid QR Code', 1;
 
     INSERT INTO Attendance (RegistrationID, CheckInMethod, VerifiedBy) VALUES (@RegID, 'QR_Scan', @AdminID);
-    UPDATE Registrations SET Status = 'Attended' WHERE RegistrationID = @RegID;
     SELECT 'Attendance Marked' AS Message;
 END;
 GO

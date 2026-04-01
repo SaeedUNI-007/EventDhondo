@@ -20,10 +20,11 @@ GO
 CREATE OR ALTER VIEW vw_StudentPortfolio AS
 SELECT 
     s.UserID, s.FirstName, s.LastName,
-    COUNT(DISTINCT r.EventID) AS TotalEventsAttended,
+    COUNT(DISTINCT a.RegistrationID) AS TotalEventsAttended,
     (SELECT COUNT(*) FROM StudentAchievements sa WHERE sa.UserID = s.UserID) AS TotalAchievements
 FROM StudentProfiles s
-LEFT JOIN Registrations r ON s.UserID = r.UserID AND r.Status = 'Attended'
+LEFT JOIN Registrations r ON s.UserID = r.UserID
+LEFT JOIN Attendance a ON a.RegistrationID = r.RegistrationID
 GROUP BY s.UserID, s.FirstName, s.LastName;
 GO
 

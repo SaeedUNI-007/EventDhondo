@@ -172,6 +172,56 @@ export default function ViewEventOrg() {
     }
   }
 
+  async function handleCancelEvent() {
+    if (!confirm("Cancel this event? It will remain visible but marked as Cancelled.")) return;
+
+    try {
+      setMessage("");
+      const res = await fetch(`${API_BASE_URL}/api/events/${encodeURIComponent(eventId)}/cancel`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": String(userId),
+        },
+      });
+
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.message || "Cancel failed");
+      }
+
+      setEventData((prev) => ({ ...(prev || {}), Status: "Cancelled", status: "Cancelled" }));
+      setMessage(payload?.message || "Event cancelled successfully.");
+    } catch (err) {
+      setMessage(err?.message || "Cancel failed.");
+    }
+  }
+
+  async function handleRestoreEvent() {
+    if (!confirm("Restore this cancelled event?")) return;
+
+    try {
+      setMessage("");
+      const res = await fetch(`${API_BASE_URL}/api/events/${encodeURIComponent(eventId)}/restore`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": String(userId),
+        },
+      });
+
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.message || "Restore failed");
+      }
+
+      setEventData((prev) => ({ ...(prev || {}), Status: "Published", status: "Published" }));
+      setMessage(payload?.message || "Event restored successfully.");
+    } catch (err) {
+      setMessage(err?.message || "Restore failed.");
+    }
+  }
+
   return (
     <main className="min-h-screen shell">
       <div className="surface-card overflow-hidden p-0 max-w-6xl mx-auto">
@@ -231,6 +281,12 @@ export default function ViewEventOrg() {
           <div className="p-4 bg-[var(--surface-soft)] rounded md:col-span-2">
             <div className="flex gap-2 mb-3">
               <Link href={`/event/edit/${eventId}?returnTo=${encodeURIComponent(safeReturnTo)}`} className="rounded-lg border border-[var(--stroke)] bg-white px-3 py-2 text-sm font-semibold">Edit</Link>
+              <Link href={`/attendanceO?eventId=${encodeURIComponent(eventId)}`} className="rounded-lg border border-[var(--stroke)] bg-white px-3 py-2 text-sm font-semibold">Attendance</Link>
+              {(eventData.Status || eventData.status || "").toLowerCase() === "cancelled" ? (
+                <button onClick={handleRestoreEvent} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white">Restore Event</button>
+              ) : (
+                <button onClick={handleCancelEvent} className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white">Cancel Event</button>
+              )}
               <button onClick={handleDelete} className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white">Delete</button>
             </div>
 

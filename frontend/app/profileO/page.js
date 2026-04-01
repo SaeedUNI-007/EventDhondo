@@ -12,8 +12,40 @@ export default function ProfileO() {
   const [contactEmail, setContactEmail] = useState("no-reply@organization.org");
   const [verification, setVerification] = useState("Pending");
   const [profilePictureDataUrl, setProfilePictureDataUrl] = useState("");
+  const [events, setEvents] = useState([]);
+  const [selectedEventId, setSelectedEventId] = useState("");
+  const [qrCodeInput, setQrCodeInput] = useState("");
+  const [isCheckingIn, setIsCheckingIn] = useState(false);
+  const [scanStatus, setScanStatus] = useState("");
   const [status, setStatus] = useState("");
   const fileInputRef = useRef(null);
+
+  const resolveOrganizerId = async () => {
+    const storedUserId = sessionStorage.getItem("userID") || sessionStorage.getItem("userId") || localStorage.getItem("userID") || localStorage.getItem("userId") || "";
+    if (Number.isInteger(Number(storedUserId)) && Number(storedUserId) > 0) {
+      return String(Number(storedUserId));
+    }
+
+    const storedEmail = sessionStorage.getItem("userEmail") || localStorage.getItem("userEmail") || "";
+    if (!storedEmail) return "";
+
+    const res = await fetch(`${API_BASE_URL}/api/users?email=${encodeURIComponent(storedEmail)}`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data?.message || "Could not resolve organizer account");
+    }
+
+    const resolved = String(data?.userId || data?.id || "");
+    if (!Number.isInteger(Number(resolved)) || Number(resolved) <= 0) {
+      throw new Error("Could not resolve a valid organizer user ID");
+    }
+
+    sessionStorage.setItem("userID", resolved);
+    sessionStorage.setItem("userId", resolved);
+    localStorage.setItem("userID", resolved);
+    localStorage.setItem("userId", resolved);
+    return resolved;
+  };
 
   const readScopedValue = (key, fallback = "") => {
     if (typeof window === "undefined") return fallback;
@@ -44,12 +76,14 @@ export default function ProfileO() {
   };
 
   useEffect(() => {
+    let isMounted = true;
     const userId = sessionStorage.getItem("userID") || sessionStorage.getItem("userId") || localStorage.getItem("userID") || localStorage.getItem("userId");
     setCurrentUserId(userId || "");
 
     const readInitial = (key, fallback = "") => {
-      if (userId) {
-        const scopedValue = localStorage.getItem(`${key}:${userId}`);
+      const currentId = sessionStorage.getItem("userID") || sessionStorage.getItem("userId") || localStorage.getItem("userID") || localStorage.getItem("userId");
+      if (currentId) {
+        const scopedValue = localStorage.getItem(`${key}:${currentId}`);
         if (scopedValue !== null) return scopedValue;
         return fallback;
       }
@@ -70,13 +104,15 @@ export default function ProfileO() {
     if (savedPic) setProfilePictureDataUrl(savedPic);
 
     const fetchProfile = async () => {
-      if (!userId) return;
       try {
+        const resolvedUserId = userId || await resolveOrganizerId();
+        if (!isMounted || !resolvedUserId) return;
+        setCurrentUserId(resolvedUserId);
         setStatus("Loading profile...");
-        const res = await fetch(`${API_BASE_URL}/api/profile/${encodeURIComponent(userId)}`, {
+        const res = await fetch(`${API_BASE_URL}/api/profile/${encodeURIComponent(resolvedUserId)}`, {
           headers: {
             "Content-Type": "application/json",
-            "x-user-id": String(userId),
+            "x-user-id": String(resolvedUserId),
           },
         });
         const data = await res.json();
@@ -96,12 +132,12 @@ export default function ProfileO() {
         setVerification(nextVer);
         setProfilePictureDataUrl(nextPic);
 
-        localStorage.setItem(`organizationName:${userId}`, nextName);
-        localStorage.setItem(`organizationDescription:${userId}`, nextDesc);
-        localStorage.setItem(`userEmail:${userId}`, nextEmail);
-        localStorage.setItem(`organizationVerificationStatus:${userId}`, nextVer);
-        localStorage.setItem(`displayName:${userId}`, nextName);
-        localStorage.setItem(`profilePictureURL:${userId}`, nextPic);
+        localStorage.setItem(`organizationName:${resolvedUserId}`, nextName);
+        localStorage.setItem(`organizationDescription:${resolvedUserId}`, nextDesc);
+        localStorage.setItem(`userEmail:${resolvedUserId}`, nextEmail);
+        localStorage.setItem(`organizationVerificationStatus:${resolvedUserId}`, nextVer);
+        localStorage.setItem(`displayName:${resolvedUserId}`, nextName);
+        localStorage.setItem(`profilePictureURL:${resolvedUserId}`, nextPic);
 
         sessionStorage.setItem("displayName", nextName);
         sessionStorage.setItem("userEmail", nextEmail);
@@ -111,12 +147,47 @@ export default function ProfileO() {
         localStorage.setItem("profilePictureURL", nextPic);
         setStatus("");
       } catch (err) {
-        setStatus(err.message || "Could not fetch profile from server");
+        if (isMounted) {
+          setStatus(err.message || "Could not fetch profile from server");
+        }
       }
     };
 
     fetchProfile();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
+
+  useEffect(() => {
+    const loadOrganizerEvents = async () => {
+      let organizerId = currentUserId;
+      if (!organizerId || !Number.isInteger(Number(organizerId))) {
+        try {
+          organizerId = await resolveOrganizerId();
+          if (organizerId) setCurrentUserId(organizerId);
+        } catch (_err) {
+          return;
+        }
+      }
+      if (!organizerId || !Number.isInteger(Number(organizerId))) return;
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/events?organizerId=${encodeURIComponent(organizerId)}`);
+        const data = await res.json().catch(() => []);
+        if (!res.ok) throw new Error(data?.message || "Failed to load events");
+        const list = Array.isArray(data) ? data : [];
+        setEvents(list);
+        if (!selectedEventId && list.length > 0) {
+          setSelectedEventId(String(list[0].EventID || list[0].eventId || ""));
+        }
+      } catch (_err) {
+        setEvents([]);
+      }
+    };
+
+    loadOrganizerEvents();
+  }, [currentUserId, selectedEventId]);
 
   const handleProfilePicture = (file) => {
     if (!file) return;
@@ -131,6 +202,59 @@ export default function ProfileO() {
   };
 
   const openFilePicker = () => fileInputRef.current?.click();
+
+  const submitCheckIn = async (overrideCode) => {
+    const code = String(overrideCode || qrCodeInput || "").trim();
+    if (!code) {
+      setScanStatus("Please paste a QR code.");
+      return;
+    }
+
+    if (!selectedEventId || !Number.isInteger(Number(selectedEventId))) {
+      setScanStatus("Please select an event first.");
+      return;
+    }
+
+    try {
+      setIsCheckingIn(true);
+      setScanStatus("");
+      const userIdMatch = String(code)
+        .replace(/[\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/g, "")
+        .match(/EDUQR\W*(\d+)\W*/i);
+      const parsedQrUserId = Number(userIdMatch?.[1]);
+
+      const payload = {
+        qrCode: code,
+        eventId: String(Number(selectedEventId)),
+      };
+      if (Number.isInteger(parsedQrUserId) && parsedQrUserId > 0) {
+        payload.qrUserId = String(parsedQrUserId);
+      }
+
+      const res = await fetch(`${API_BASE_URL}/api/events/check-in`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": String(currentUserId || ""),
+        },
+        body: JSON.stringify(payload),
+      });
+      const raw = await res.text();
+      let data = {};
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch (_err) {
+        data = { message: raw || "Check-in failed" };
+      }
+      if (!res.ok) throw new Error(data?.message || "Check-in failed");
+      setScanStatus(data?.message || "Attendance marked!");
+      setQrCodeInput("");
+    } catch (err) {
+      setScanStatus(err?.message || "Could not mark attendance.");
+    } finally {
+      setIsCheckingIn(false);
+    }
+  };
 
   return (
     <main className="min-h-screen px-4 py-10">
@@ -206,6 +330,53 @@ export default function ProfileO() {
                 <div className="flex-1">
                   <div className="text-sm text-slate-800">{verification}</div>
                 </div>
+              </div>
+
+              <div className="rounded-xl border border-[var(--stroke)] bg-white p-4">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-slate-900">Quick QR Attendance</p>
+                  <Link href="/attendanceO" className="text-xs font-semibold text-[var(--brand)] hover:underline">Open Full Attendance Page</Link>
+                </div>
+
+                <label className="mb-1 block text-xs text-slate-600">Event</label>
+                <select
+                  value={selectedEventId}
+                  onChange={(e) => setSelectedEventId(e.target.value)}
+                  className="w-full rounded-lg border border-[var(--stroke)] bg-white px-3 py-2 text-sm"
+                >
+                  {events.map((ev) => (
+                    <option key={ev.EventID || ev.eventId} value={String(ev.EventID || ev.eventId)}>
+                      {ev.Title || ev.title}
+                    </option>
+                  ))}
+                </select>
+
+                <label className="mt-3 mb-1 block text-xs text-slate-600">QR Code</label>
+                <input
+                  value={qrCodeInput}
+                  onChange={(e) => setQrCodeInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      submitCheckIn();
+                    }
+                  }}
+                  placeholder="Paste QR token"
+                  className="w-full rounded-lg border border-[var(--stroke)] bg-white px-3 py-2 text-sm"
+                />
+
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => submitCheckIn()}
+                    disabled={isCheckingIn || !qrCodeInput.trim()}
+                    className="rounded-lg bg-gradient-to-r from-[var(--brand)] to-[var(--brand-strong)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                  >
+                    {isCheckingIn ? "Checking in..." : "Mark Attendance"}
+                  </button>
+                </div>
+
+                {scanStatus && <p className="mt-2 text-sm text-slate-700">{scanStatus}</p>}
               </div>
 
               <div className="mt-4 flex gap-3">

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { BarChart3, BadgeCheck, CalendarRange, Lightbulb, Shield } from "lucide-react";
+import { Bell } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/dashboardA", label: "Overview", icon: BarChart3 },
@@ -11,6 +12,8 @@ const NAV_ITEMS = [
   { href: "/dashboardA/events", label: "Manage Events", icon: CalendarRange },
   { href: "/dashboardA/student-events", label: "Student Events", icon: CalendarRange },
   { href: "/dashboardA/requests", label: "Student Requests", icon: Lightbulb },
+  // Notifications placed immediately after Student Requests
+  { href: "/notifications", label: "Notifications", icon: Bell },
 ];
 
 export default function AdminLayout({ children }) {

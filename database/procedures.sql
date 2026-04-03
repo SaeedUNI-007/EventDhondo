@@ -363,7 +363,7 @@ BEGIN
     END TRY
     BEGIN CATCH
         IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
-        SELECT 'Error: ' + ERROR_MESSAGE() AS Message;
+        SELECT 'Error' + ERROR_MESSAGE() AS Message;
     END CATCH
 END;
 GO
@@ -500,5 +500,82 @@ CREATE PROCEDURE sp_ReadNotification
 AS
 BEGIN
     UPDATE Notifications SET Status = 'Read', ReadAt = SYSDATETIMEOFFSET() WHERE NotificationID = @NotificationID;
+END;
+GO
+
+/* Notifications: get paged notifications for a user */
+IF OBJECT_ID(N'dbo.sp_GetNotificationsForUser', N'P') IS NOT NULL
+    DROP PROCEDURE dbo.sp_GetNotificationsForUser;
+GO
+CREATE PROCEDURE dbo.sp_GetNotificationsForUser
+    @UserID INT,
+    @Page INT = 1,
+    @PageSize INT = 20
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @Offset INT = (@Page - 1) * @PageSize;
+
+    SELECT
+        NotificationID AS notificationId,
+        UserID    AS userId,
+        Title     AS title,
+        Message   AS message,
+        RelatedEventID AS relatedEventId,
+        Status    AS status,
+        CreatedAt AS createdAt,
+        ReadAt    AS readAt
+    FROM Notifications
+    WHERE UserID = @UserID
+    ORDER BY CreatedAt DESC
+    OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;
+END;
+GO
+
+/* Notifications: get single notification by id */
+IF OBJECT_ID(N'dbo.sp_GetNotificationById', N'P') IS NOT NULL
+    DROP PROCEDURE dbo.sp_GetNotificationById;
+GO
+CREATE PROCEDURE dbo.sp_GetNotificationById
+    @NotificationID BIGINT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT
+        NotificationID AS notificationId,
+        UserID         AS userId,
+        Title          AS title,
+        Message        AS message,
+        RelatedEventID AS relatedEventId,
+        Status         AS status,
+        CreatedAt      AS createdAt,
+        ReadAt         AS readAt
+    FROM Notifications
+    WHERE NotificationID = @NotificationID;
+END;
+GO
+
+/* Notifications: mark notifications read (CSV input) */
+IF OBJECT_ID(N'dbo.sp_MarkNotificationsRead', N'P') IS NOT NULL
+    DROP PROCEDURE dbo.sp_MarkNotificationsRead;
+GO
+CREATE PROCEDURE dbo.sp_MarkNotificationsRead
+    @UserID INT,
+    @NotificationIDs NVARCHAR(MAX) -- CSV: '101,102'
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    ;WITH ids AS (
+        SELECT TRY_CAST(value AS BIGINT) AS id
+        FROM STRING_SPLIT(@NotificationIDs, ',')
+        WHERE TRY_CAST(value AS BIGINT) IS NOT NULL
+    )
+    UPDATE n
+    SET Status = 'Read', ReadAt = SYSDATETIMEOFFSET()
+    FROM Notifications n
+    JOIN ids i ON n.NotificationID = i.id
+    WHERE n.UserID = @UserID;
 END;
 GO

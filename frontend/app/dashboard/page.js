@@ -88,7 +88,8 @@ export default function DashboardStudent() {
     { label: 'Add Event', href: '/event' },
     { label: 'Remove Event', href: '/removeEvent' },
     { label: 'Requests', href: '/requestsU' },
-     ];
+    { label: 'Notifications', href: '/notifications' },
+  ];
 
   const userId = typeof window !== 'undefined'
     ? (sessionStorage.getItem('userId') || sessionStorage.getItem('userID') || localStorage.getItem('userId') || localStorage.getItem('userID'))

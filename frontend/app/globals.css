@@ -135,3 +135,6 @@ h4 {
     padding: 1rem;
   }
 }
+
+/* Notification dropdown fine-tune */
+.notification-dropdown { box-shadow: 0 10px 30px rgba(6,30,30,0.12); }

@@ -131,6 +131,7 @@ export default function DashboardO() {
     { label: 'Attendance', href: '/attendanceO' },
     { label: 'Remove Event', href: '/removeEventO' },
     { label: 'Requests', href: '/requestsO' },
+    { label: 'Notifications', href: '/notifications' },
   ];
 
   const SidePanelContent = ({ compact = false }) => {

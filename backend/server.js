@@ -110,6 +110,7 @@ const authRoutes  = require('./auth');
 const dataRoutes  = require('./data');
 const teamRoutes  = require('./team');
 const adminRoutes = require('./routes/admin');
+const notificationsRouter = require('./routes/notifications');
 
 // ─── Middleware ────────────────────────────────────────────────────────────
 const { authMiddleware } = require('./middleware/auth');
@@ -136,6 +137,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api', dataRoutes);
 app.use('/api/teams', authMiddleware, teamRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/notifications', notificationsRouter);
 
 // Convenience: list all users (dev/test only).
 app.get('/api/users', async (req, res) => {

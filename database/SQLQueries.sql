@@ -213,5 +213,34 @@ SELECT CategoryName,
 (SELECT COUNT(*) FROM EventCategoryMapping m WHERE m.CategoryID = c.CategoryID) AS EventCount
 FROM EventCategories c;
 
+USE [EventDhondo];
+GO
+
+-- Seed: sample notification preferences + notifications for quick frontend testing (run once)
+IF NOT EXISTS (SELECT 1 FROM NotificationPreferences WHERE UserID = 1)
+BEGIN
+    INSERT INTO NotificationPreferences (UserID, NotificationType, EmailEnabled, InAppEnabled)
+    VALUES
+      (1, 'RegistrationConfirmation', 1, 1),
+      (1, 'EventReminder', 1, 1),
+      (1, 'RegistrationDeadline', 1, 1),
+      (1, 'NewEventMatch', 1, 1),
+      (1, 'EventUpdate', 1, 1),
+      (1, 'ResultAnnouncement', 1, 1);
+END;
+GO
+
+IF NOT EXISTS (SELECT 1 FROM Notifications WHERE UserID = 1)
+BEGIN
+    INSERT INTO Notifications (UserID, Title, Message, RelatedEventID, Status, CreatedAt)
+    VALUES
+    (1, 'Registration Confirmed', 'Your registration for \"AI Workshop\" is confirmed.', 12, 'Pending', SYSDATETIME()),
+    (1, 'Event Reminder - 3 days', 'Reminder: \"Data Science Talk\" starts in 3 days.', 15, 'Pending', DATEADD(minute,-5,SYSDATETIME())),
+    (1, 'Registration Deadline (Watchlist)', 'Registration closes soon for \"Hackathon\".', 18, 'Pending', DATEADD(hour,-1,SYSDATETIME())),
+    (1, 'New Event Matching Your Interests', 'A new workshop on Machine Learning was posted.', NULL, 'Pending', DATEADD(day,-1,SYSDATETIME())),
+    (1, 'Event Cancelled', 'The Entrepreneurship meetup has been cancelled.', 20, 'Read', DATEADD(day,-2,SYSDATETIME()));
+END;
+GO
+
 
 

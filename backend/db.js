@@ -3,6 +3,11 @@
 const useWinAuth = (process.env.USE_WIN_AUTH || 'false').toLowerCase() === 'true';
 const sql = useWinAuth ? require('mssql/msnodesqlv8') : require('mssql');
 
+const parseBool = (value, fallback) => {
+    if (value === undefined || value === null || value === '') return fallback;
+    return String(value).toLowerCase() === 'true';
+};
+
 const config = useWinAuth
   ? {
       // prefer an explicit ODBC driver name — change to "ODBC Driver 17..." if you installed v17
@@ -15,7 +20,13 @@ const config = useWinAuth
       password: process.env.DB_PASSWORD,
       server: process.env.DB_SERVER || 'localhost',
       database: process.env.DB_DATABASE,
-      options: { enableArithAbort: true },
+            options: {
+                enableArithAbort: true,
+                // Modern SQL drivers default encrypt=true. For local SQL Server with
+                // self-signed certificates, trustServerCertificate must be enabled.
+                encrypt: parseBool(process.env.DB_ENCRYPT, true),
+                trustServerCertificate: parseBool(process.env.DB_TRUST_SERVER_CERTIFICATE, true)
+            },
       pool: { max: 10, min: 0, idleTimeoutMillis: 30000 }
     };
 
@@ -28,7 +39,7 @@ const poolPromise = sql.connect(config)
             try {
                 const info = await pool.request().query('SELECT DB_NAME() AS CurrentDatabase, @@SERVERNAME AS ServerName');
                 const row = info.recordset?.[0] || {};
-                console.log(`🧭 SQL Context -> Server: ${row.ServerName || dbConfig.server}, Database: ${row.CurrentDatabase || dbConfig.database}`);
+                console.log(`🧭 SQL Context -> Server: ${row.ServerName || config.server}, Database: ${row.CurrentDatabase || config.database}`);
             } catch (metaErr) {
                 console.warn('⚠️ Connected, but could not read SQL context metadata.');
             }

@@ -4,6 +4,20 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
+function normalizeNotification(row) {
+  if (!row) return null;
+  return {
+    notificationId: row.notificationId ?? row.NotificationID,
+    notificationType: row.notificationType ?? row.NotificationType,
+    title: row.title ?? row.Title ?? 'Untitled notification',
+    message: row.message ?? row.Message ?? '',
+    createdAt: row.createdAt ?? row.CreatedAt,
+    relatedEventId: row.relatedEventId ?? row.RelatedEventID,
+  };
+}
+
 export default function NotificationDetailPage() {
   const { id } = useParams();
   const router = useRouter();
@@ -14,12 +28,12 @@ export default function NotificationDetailPage() {
   useEffect(() => {
     if (!id) return;
     setLoading(true);
-    fetch(`/api/notifications/${id}`, { cache: 'no-store' })
+    fetch(`${API_BASE_URL}/api/notifications/${id}`, { cache: 'no-store' })
       .then(r => {
         if (!r.ok) throw new Error('Not found');
         return r.json();
       })
-      .then(j => setNotif(j))
+      .then(j => setNotif(normalizeNotification(j)))
       .catch(e => setError(e.message || 'Failed to load'))
       .finally(() => setLoading(false));
   }, [id]);

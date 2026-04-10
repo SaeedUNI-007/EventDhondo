@@ -3,6 +3,29 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
+function getCurrentUserId() {
+  if (typeof window === 'undefined') return '';
+  return (
+    sessionStorage.getItem('userId') ||
+    sessionStorage.getItem('userID') ||
+    localStorage.getItem('userId') ||
+    localStorage.getItem('userID') ||
+    ''
+  );
+}
+
+function normalizeNotification(row) {
+  return {
+    notificationId: row.notificationId ?? row.NotificationID,
+    title: row.title ?? row.Title ?? 'Untitled notification',
+    message: row.message ?? row.Message ?? '',
+    createdAt: row.createdAt ?? row.CreatedAt,
+    status: row.status ?? row.Status ?? 'Pending',
+  };
+}
+
 export default function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState([]);
@@ -11,10 +34,14 @@ export default function NotificationBell() {
 
   async function load() {
     try {
-      const res = await fetch('/api/notifications?filter=unread&limit=5', { cache: 'no-store' });
+      const userId = getCurrentUserId();
+      const qs = new URLSearchParams({ filter: 'unread', limit: '5' });
+      if (userId) qs.set('userId', userId);
+      const res = await fetch(`${API_BASE_URL}/api/notifications?${qs.toString()}`, { cache: 'no-store' });
       if (!res.ok) return;
       const json = await res.json();
-      setItems(json.items || []);
+      const normalized = (json.items || []).map(normalizeNotification);
+      setItems(normalized);
       setCount(json.total ?? (json.items || []).length);
     } catch (e) {
       console.error('load notifications', e);
@@ -31,12 +58,13 @@ export default function NotificationBell() {
 
   async function markRead(id) {
     try {
-      await fetch('/api/notifications/mark-read', {
+      const userId = getCurrentUserId();
+      await fetch(`${API_BASE_URL}/api/notifications/mark-read`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: [id] })
+        body: JSON.stringify({ ids: [id], ...(userId ? { userId: Number(userId) } : {}) })
       });
-      setItems(prev => prev.filter(p => p.notificationId !== id));
+      setItems(prev => prev.filter(p => Number(p.notificationId) !== Number(id)));
       setCount(c => Math.max(0, c - 1));
     } catch (e) {
       console.error(e);

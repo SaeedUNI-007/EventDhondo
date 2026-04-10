@@ -10,6 +10,9 @@ export default function RemoveEventO() {
   const userId = typeof window !== "undefined"
     ? (sessionStorage.getItem("userId") || sessionStorage.getItem("userID") || localStorage.getItem("userId") || localStorage.getItem("orgId") || "org")
     : "org";
+  const token = typeof window !== "undefined"
+    ? (sessionStorage.getItem("token") || localStorage.getItem("token") || "")
+    : "";
 
   useEffect(() => {
     const loadEvents = async () => {
@@ -47,7 +50,13 @@ export default function RemoveEventO() {
       setMessage("");
       const res = await fetch(
         `${API_BASE_URL}/api/events/${encodeURIComponent(id)}?organizerId=${encodeURIComponent(userId || "")}`,
-        { method: "DELETE" }
+        {
+          method: "DELETE",
+          headers: {
+            "x-user-id": String(userId || ""),
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        }
       );
 
       const payload = await res.json().catch(() => ({}));

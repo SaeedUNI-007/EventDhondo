@@ -3,6 +3,19 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
+function getCurrentUserId() {
+  if (typeof window === 'undefined') return '';
+  return (
+    sessionStorage.getItem('userId') ||
+    sessionStorage.getItem('userID') ||
+    localStorage.getItem('userId') ||
+    localStorage.getItem('userID') ||
+    ''
+  );
+}
+
 export default function NotificationSettingsPage() {
   const router = useRouter();
   const [prefs, setPrefs] = useState([]);
@@ -17,7 +30,9 @@ export default function NotificationSettingsPage() {
 
   async function load() {
     try {
-      const res = await fetch('/api/notifications/settings', { cache: 'no-store' });
+      const userId = getCurrentUserId();
+      const qs = userId ? `?userId=${encodeURIComponent(userId)}` : '';
+      const res = await fetch(`${API_BASE_URL}/api/notifications/settings${qs}`, { cache: 'no-store' });
       if (!res.ok) return;
       const json = await res.json();
       setPrefs(json.preferences || []);
@@ -36,10 +51,11 @@ export default function NotificationSettingsPage() {
 
   async function save() {
     try {
-      const res = await fetch('/api/notifications/settings', {
+      const userId = getCurrentUserId();
+      const res = await fetch(`${API_BASE_URL}/api/notifications/settings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ preferences: prefs })
+        body: JSON.stringify({ preferences: prefs, ...(userId ? { userId: Number(userId) } : {}) })
       });
       if (res.ok) {
         const el = document.getElementById('ns-save-ok');

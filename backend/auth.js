@@ -247,7 +247,7 @@ router.post('/login', async (req, res) => {
         
         const result = await pool.request()
             .input('Email', sql.NVarChar, normalizedEmail)
-            .query('SELECT UserID, Role, PasswordHash FROM Users WHERE Email = @Email');
+            .query('SELECT UserID, Role, PasswordHash, VerificationStatus FROM Users WHERE Email = @Email');
 
         if (result.recordset.length > 0) {
             const user = result.recordset[0];
@@ -259,6 +259,16 @@ router.post('/login', async (req, res) => {
                 : false;
 
 if (isPasswordValid) {
+    if (
+        String(user.Role || '').toLowerCase() === 'organizer'
+        && String(user.VerificationStatus || '').toLowerCase() !== 'verified'
+    ) {
+        return res.status(403).json({
+            success: false,
+            message: 'Your organizer account is not approved yet. Please wait for admin verification.'
+        });
+    }
+
     // 2. Generate a JWT token
     const token = jwt.sign(
         { userId: user.UserID, role: user.Role }, 

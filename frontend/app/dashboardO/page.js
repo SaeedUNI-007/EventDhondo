@@ -1,6 +1,7 @@
 "use client";
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import SidebarNotificationBell from '@/components/SidebarNotificationBell';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -27,6 +28,9 @@ export default function DashboardO() {
   const organizerId = typeof window !== "undefined"
     ? (sessionStorage.getItem("userID") || sessionStorage.getItem("userId") || localStorage.getItem("userID") || localStorage.getItem("userId"))
     : null;
+  const token = typeof window !== "undefined"
+    ? (sessionStorage.getItem("token") || localStorage.getItem("token") || "")
+    : "";
 
   useEffect(() => {
     const savedName = organizerId
@@ -88,7 +92,13 @@ export default function DashboardO() {
       // attempt backend delete, if API exists
       const res = await fetch(
         `${API_BASE_URL}/api/events/${encodeURIComponent(removeCandidate)}?organizerId=${encodeURIComponent(organizerId || "")}`,
-        { method: "DELETE" }
+        {
+          method: "DELETE",
+          headers: {
+            "x-user-id": String(organizerId || ""),
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        }
       );
       if (res.ok || res.status === 404) {
         // update client state
@@ -174,7 +184,10 @@ export default function DashboardO() {
             {NAV_ITEMS.map((item) => (
               <li key={item.href}>
                 <Link href={item.href} className="block w-full text-left rounded-md px-4 py-3 text-sm font-medium text-white hover:bg-white/10">
-                  {item.label}
+                  <span className="flex items-center justify-between gap-2">
+                    <span>{item.label}</span>
+                    {item.href === '/notifications' && <SidebarNotificationBell />}
+                  </span>
                 </Link>
               </li>
             ))}

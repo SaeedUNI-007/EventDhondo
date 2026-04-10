@@ -134,10 +134,10 @@ console.log(`🔒 CORS origins: ${allowedOrigins.join(', ')}`);
 
 // ─── Register routes ───────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
+app.use('/api/notifications', notificationsRouter);
 app.use('/api', dataRoutes);
 app.use('/api/teams', authMiddleware, teamRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/notifications', notificationsRouter);
 
 // Convenience: list all users (dev/test only).
 app.get('/api/users', async (req, res) => {

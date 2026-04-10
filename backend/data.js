@@ -2024,6 +2024,12 @@ router.post('/events', authMiddleware, async (req, res) => {
     const parsedOrganizerId = req.user?.UserID;
     if (!parsedOrganizerId) return res.status(401).json({ success: false, message: 'Authentication required' });
     if (req.user?.Role !== 'Organizer') return res.status(403).json({ success: false, message: 'Only organizers can create events' });
+    if (String(req.user?.VerificationStatus || '').toLowerCase() !== 'verified') {
+        return res.status(403).json({
+            success: false,
+            message: 'Organizer account is pending admin approval. You cannot create events yet.'
+        });
+    }
 
     const parsedCapacity = Number(capacity);
     const normalizedTitle = String(title || '').trim();
@@ -2307,6 +2313,30 @@ router.put('/events/:id/cancel', authMiddleware, async (req, res) => {
         if (req.user?.Role !== 'Admin' && Number(event.OrganizerID) !== Number(requesterId)) return res.status(403).json({ success: false, message: 'You can only cancel your own events' });
         if (String(event.Status||'').toLowerCase() === 'cancelled') return res.json({ success: true, message: 'Event is already cancelled' });
         await pool.request().input('EventID', sql.Int, eventId).query(`UPDATE Events SET Status='Cancelled', UpdatedAt=SYSDATETIMEOFFSET() WHERE EventID=@EventID`);
+
+        // Notify all active registrants with event details.
+        await pool.request()
+            .input('EventID', sql.Int, eventId)
+            .query(`
+                INSERT INTO [dbo].[Notifications] (UserID, Title, Message, RelatedEventID, Status)
+                SELECT
+                    r.UserID,
+                    'Event Cancelled',
+                    CONCAT(
+                        'An event you registered for has been cancelled.',
+                        CHAR(10),
+                        'Event: ', e.Title,
+                        CASE WHEN e.EventDate IS NOT NULL THEN CONCAT(' | Date: ', CONVERT(VARCHAR(10), e.EventDate, 23)) ELSE '' END,
+                        CASE WHEN e.Venue IS NOT NULL AND LTRIM(RTRIM(e.Venue)) <> '' THEN CONCAT(' | Venue: ', e.Venue) ELSE '' END
+                    ),
+                    e.EventID,
+                    'Pending'
+                FROM [dbo].[Registrations] r
+                JOIN [dbo].[Events] e ON e.EventID = r.EventID
+                WHERE r.EventID = @EventID
+                  AND r.Status <> 'Cancelled'
+            `);
+
         return res.json({ success: true, message: 'Event cancelled successfully' });
     } catch (err) {
         return res.status(500).json({ success: false, message: err.message || 'Failed to cancel event' });
@@ -2345,11 +2375,19 @@ router.delete('/events/:id', authMiddleware, async (req, res) => {
         const event = eventCheck.recordset?.[0];
         if (!event) return res.status(404).json({ success: false, message: 'Event not found' });
         if (req.user?.Role !== 'Admin' && event.OrganizerID !== userId) return res.status(403).json({ success: false, message: 'You can only delete your own events' });
-        const result = await pool.request().input('EventID', sql.Int, eventId).query(`UPDATE Events SET Status='Cancelled', UpdatedAt=SYSDATETIMEOFFSET() WHERE EventID=@EventID`);
+        const result = await pool.request()
+            .input('EventID', sql.Int, eventId)
+            .query('DELETE FROM Events WHERE EventID=@EventID');
         if ((result.rowsAffected?.[0]||0) === 0) return res.status(404).json({ success: false, message: 'Event not found' });
         return res.json({ success: true, message: 'Event deleted successfully' });
     } catch (err) {
         console.error('Delete Event Error:', err);
+        if (err?.number === 547) {
+            return res.status(409).json({
+                success: false,
+                message: 'This event is referenced by dependent records and cannot be hard-deleted. Cancel it instead.'
+            });
+        }
         return res.status(500).json({ success: false, message: 'Failed to delete event' });
     }
 });

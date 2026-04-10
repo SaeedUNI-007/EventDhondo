@@ -20,6 +20,9 @@ export default function EventOCreate() {
   const userRole = typeof window !== "undefined"
     ? String(sessionStorage.getItem("userRole") || localStorage.getItem("userRole") || "").trim().toLowerCase()
     : "";
+  const token = typeof window !== "undefined"
+    ? (sessionStorage.getItem("token") || localStorage.getItem("token") || "")
+    : "";
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -54,7 +57,11 @@ export default function EventOCreate() {
     try {
       const res = await fetch(`${API_BASE_URL}/api/events`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": String(organizerId),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify(payload),
       });
 

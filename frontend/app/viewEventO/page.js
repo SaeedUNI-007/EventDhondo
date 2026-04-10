@@ -22,6 +22,9 @@ export default function ViewEventOrg() {
   const userId = typeof window !== "undefined"
     ? (sessionStorage.getItem("userId") || sessionStorage.getItem("userID") || localStorage.getItem("userId") || localStorage.getItem("orgId") || "")
     : "";
+  const token = typeof window !== "undefined"
+    ? (sessionStorage.getItem("token") || localStorage.getItem("token") || "")
+    : "";
 
   function formatDate(value) {
     if (!value) return "TBA";
@@ -160,7 +163,13 @@ export default function ViewEventOrg() {
     try {
       const res = await fetch(
         `${API_BASE_URL}/api/events/${encodeURIComponent(eventId)}?organizerId=${encodeURIComponent(userId || "")}`,
-        { method: "DELETE" }
+        {
+          method: "DELETE",
+          headers: {
+            "x-user-id": String(userId || ""),
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        }
       );
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {

@@ -1,6 +1,7 @@
 "use client";
 import Link from 'next/link';
 import { useEffect, useState, useMemo } from 'react';
+import SidebarNotificationBell from '@/components/SidebarNotificationBell';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -216,7 +217,10 @@ export default function DashboardStudent() {
             {NAV_ITEMS.map((item) => (
               <li key={item.href}>
                 <Link href={item.href} className="block w-full text-left rounded-md px-4 py-3 text-sm font-medium text-white hover:bg-white/10">
-                  {item.label}
+                  <span className="flex items-center justify-between gap-2">
+                    <span>{item.label}</span>
+                    {item.href === '/notifications' && <SidebarNotificationBell />}
+                  </span>
                 </Link>
               </li>
             ))}

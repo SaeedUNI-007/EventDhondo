@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { BarChart3, BadgeCheck, CalendarRange, Lightbulb, Shield } from "lucide-react";
 import { Bell } from "lucide-react";
+import SidebarNotificationBell from "@/components/SidebarNotificationBell";
 
 const NAV_ITEMS = [
   { href: "/dashboardA", label: "Overview", icon: BarChart3 },
@@ -79,7 +80,10 @@ export default function AdminLayout({ children }) {
                           }`}
                         >
                           <Icon className="h-4 w-4" />
-                          <span>{item.label}</span>
+                          <span className="flex w-full items-center justify-between gap-2">
+                            <span>{item.label}</span>
+                            {item.href === "/notifications" && <SidebarNotificationBell />}
+                          </span>
                         </Link>
                       </li>
                     );
@@ -123,7 +127,10 @@ export default function AdminLayout({ children }) {
                           }`}
                         >
                           <Icon className="h-4 w-4" />
-                          <span>{item.label}</span>
+                          <span className="flex w-full items-center justify-between gap-2">
+                            <span>{item.label}</span>
+                            {item.href === "/notifications" && <SidebarNotificationBell />}
+                          </span>
                         </Link>
                       </li>
                     );

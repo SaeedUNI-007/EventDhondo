@@ -457,16 +457,154 @@ END;
 GO
 
 
--- [RECS] Get Events Matching Student Interests
-CREATE PROCEDURE sp_GetRecommendedEvents
-    @UserID INT
+IF OBJECT_ID(N'dbo.sp_GetRecommendedEvents', N'P') IS NOT NULL
+    DROP PROCEDURE dbo.sp_GetRecommendedEvents;
+GO
+
+CREATE PROCEDURE dbo.sp_GetRecommendedEvents
+    @UserID INT,
+    @TopN INT = 10
 AS
 BEGIN
-    SELECT DISTINCT e.* FROM vw_UpcomingEvents e
-    JOIN EventTagMapping etm ON e.EventID = etm.EventID
-    JOIN Interests i ON etm.TagID = i.InterestID
-    JOIN UserInterests ui ON i.InterestID = ui.InterestID
-    WHERE ui.UserID = @UserID;
+    SET NOCOUNT ON;
+
+    DECLARE @Today DATE = CAST(GETDATE() AS DATE);
+    DECLARE @Department NVARCHAR(100) = (
+        SELECT TOP 1 Department
+        FROM StudentProfiles
+        WHERE UserID = @UserID
+    );
+
+    ;WITH CandidateEvents AS (
+        SELECT
+            e.EventID,
+            e.OrganizerID,
+            e.Title,
+            e.Description,
+            e.EventType,
+            e.EventDate,
+            e.EventTime,
+            e.Venue,
+            e.Capacity,
+            e.RegistrationDeadline,
+            e.Status,
+            e.PosterURL,
+            e.CreatedAt,
+            e.UpdatedAt
+        FROM Events e
+        WHERE e.Status = 'Published'
+          AND e.EventDate >= @Today
+          AND NOT EXISTS (
+              SELECT 1
+              FROM Registrations r
+              WHERE r.EventID = e.EventID
+                AND r.UserID = @UserID
+                AND r.Status <> 'Cancelled'
+          )
+    ),
+    InterestMatch AS (
+        SELECT
+            ce.EventID,
+            COUNT(DISTINCT ui.InterestID) AS MatchedInterests
+        FROM CandidateEvents ce
+        LEFT JOIN EventTagMapping etm ON etm.EventID = ce.EventID
+        LEFT JOIN UserInterests ui
+            ON ui.InterestID = etm.TagID
+           AND ui.UserID = @UserID
+        GROUP BY ce.EventID
+    ),
+    PeerPopularity AS (
+        SELECT
+            ce.EventID,
+            COUNT(*) AS SameDeptRegistrations
+        FROM CandidateEvents ce
+        JOIN Registrations r ON r.EventID = ce.EventID AND r.Status = 'Confirmed'
+        JOIN StudentProfiles sp ON sp.UserID = r.UserID
+        WHERE @Department IS NOT NULL
+          AND sp.Department = @Department
+        GROUP BY ce.EventID
+    ),
+    Trending AS (
+        SELECT
+            ce.EventID,
+            COUNT(*) AS TotalRegistrations
+        FROM CandidateEvents ce
+        LEFT JOIN Registrations r ON r.EventID = ce.EventID AND r.Status = 'Confirmed'
+        GROUP BY ce.EventID
+    ),
+    UserHistory AS (
+        SELECT DISTINCT e.EventType
+        FROM Registrations r
+        JOIN Attendance a ON a.RegistrationID = r.RegistrationID
+        JOIN Events e ON e.EventID = r.EventID
+        WHERE r.UserID = @UserID
+    )
+    SELECT TOP (CASE WHEN @TopN IS NULL OR @TopN <= 0 THEN 10 ELSE @TopN END)
+        ce.EventID,
+        ce.OrganizerID,
+        ce.Title,
+        ce.Description,
+        ce.EventType,
+        ce.EventDate,
+        ce.EventTime,
+        ce.Venue,
+        ce.Capacity,
+        ce.RegistrationDeadline,
+        ce.Status,
+        ce.PosterURL,
+        ce.CreatedAt,
+        ce.UpdatedAt,
+        CAST(
+            (ISNULL(im.MatchedInterests, 0) * 40)
+            + CASE WHEN uh.EventType IS NOT NULL THEN 20 ELSE 0 END
+            + (ISNULL(pp.SameDeptRegistrations, 0) * 5)
+            + (ISNULL(t.TotalRegistrations, 0) * 2)
+            AS INT
+        ) AS RecommendationScore,
+        CASE
+            WHEN ISNULL(im.MatchedInterests, 0) > 0 THEN 'Matches your interests'
+            WHEN uh.EventType IS NOT NULL THEN 'Similar to events you attended'
+            WHEN ISNULL(pp.SameDeptRegistrations, 0) > 0 THEN 'Popular in your department'
+            ELSE 'Trending campus-wide'
+        END AS RecommendationReason
+    FROM CandidateEvents ce
+    LEFT JOIN InterestMatch im ON im.EventID = ce.EventID
+    LEFT JOIN PeerPopularity pp ON pp.EventID = ce.EventID
+    LEFT JOIN Trending t ON t.EventID = ce.EventID
+    LEFT JOIN UserHistory uh ON uh.EventType = ce.EventType
+    ORDER BY RecommendationScore DESC, ce.EventDate ASC, ce.EventID DESC;
+END;
+GO
+
+IF OBJECT_ID(N'dbo.sp_GetOrganizerReputation', N'P') IS NOT NULL
+    DROP PROCEDURE dbo.sp_GetOrganizerReputation;
+GO
+
+CREATE PROCEDURE dbo.sp_GetOrganizerReputation
+    @OrganizerID INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT
+        v.OrganizerID,
+        v.OrganizationName,
+        v.TotalReviewsReceived,
+        v.TotalEventsHosted,
+        v.AvgOverallRating,
+        v.AvgOrganizationRating,
+        v.AvgContentRating,
+        v.AvgVenueRating,
+        v.ReputationScore,
+        CASE
+            WHEN v.ReputationScore >= 4.5 THEN 'Platinum'
+            WHEN v.ReputationScore >= 4.0 THEN 'Gold'
+            WHEN v.ReputationScore >= 3.5 THEN 'Silver'
+            ELSE 'Standard'
+        END AS ReputationTier
+    FROM vw_OrganizerReputationScore v
+    WHERE @OrganizerID IS NULL OR v.OrganizerID = @OrganizerID
+    ORDER BY v.ReputationScore DESC, v.TotalReviewsReceived DESC, v.OrganizerID ASC;
 END;
 GO
 

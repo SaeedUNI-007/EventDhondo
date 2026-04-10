@@ -81,6 +81,31 @@ LEFT JOIN EventReviews er ON e.EventID = er.EventID
 GROUP BY op.UserID, op.OrganizationName;
 GO
 
+CREATE OR ALTER VIEW vw_OrganizerReputationScore AS
+SELECT
+    op.UserID AS OrganizerID,
+    op.OrganizationName,
+    COUNT(er.ReviewID) AS TotalReviewsReceived,
+    COUNT(DISTINCT e.EventID) AS TotalEventsHosted,
+    CAST(AVG(CAST(er.OverallRating AS FLOAT)) AS DECIMAL(5,2)) AS AvgOverallRating,
+    CAST(AVG(CAST(er.OrganizationQualityRating AS FLOAT)) AS DECIMAL(5,2)) AS AvgOrganizationRating,
+    CAST(AVG(CAST(er.ContentQualityRating AS FLOAT)) AS DECIMAL(5,2)) AS AvgContentRating,
+    CAST(AVG(CAST(er.VenueRating AS FLOAT)) AS DECIMAL(5,2)) AS AvgVenueRating,
+    CAST(
+        (
+            ISNULL(AVG(CAST(er.OverallRating AS FLOAT)), 0) * 0.40
+            + ISNULL(AVG(CAST(er.OrganizationQualityRating AS FLOAT)), 0) * 0.20
+            + ISNULL(AVG(CAST(er.ContentQualityRating AS FLOAT)), 0) * 0.25
+            + ISNULL(AVG(CAST(er.VenueRating AS FLOAT)), 0) * 0.15
+        )
+        AS DECIMAL(5,2)
+    ) AS ReputationScore
+FROM OrganizerProfiles op
+LEFT JOIN Events e ON e.OrganizerID = op.UserID
+LEFT JOIN EventReviews er ON er.EventID = e.EventID
+GROUP BY op.UserID, op.OrganizationName;
+GO
+
 
 CREATE OR ALTER VIEW vw_DetailedAchievementPortfolio AS
 SELECT 
@@ -93,4 +118,75 @@ SELECT
 FROM StudentAchievements sa
 JOIN Events e ON sa.EventID = e.EventID
 JOIN OrganizerProfiles o ON e.OrganizerID = o.UserID;
+GO
+
+CREATE OR ALTER VIEW vw_StudentPortfolioSummary AS
+SELECT
+    sp.UserID,
+    CONCAT(sp.FirstName, ' ', sp.LastName) AS StudentName,
+    u.Email,
+    sp.Department,
+    sp.YearOfStudy,
+    COUNT(DISTINCT CASE WHEN r.Status = 'Attended' OR a.AttendanceID IS NOT NULL THEN r.EventID END) AS TotalEventsAttended,
+    COUNT(DISTINCT CASE WHEN r.Status <> 'Cancelled' THEN r.EventID END) AS TotalEventsRegistered,
+    COUNT(DISTINCT sa.AchievementID) AS TotalAchievements,
+    SUM(CASE WHEN LOWER(ISNULL(sa.Position, '')) LIKE '%1st%' OR LOWER(ISNULL(sa.Position, '')) LIKE '%winner%' THEN 1 ELSE 0 END) AS FirstPlaceCount,
+    SUM(CASE WHEN LOWER(ISNULL(sa.Position, '')) LIKE '%2nd%' OR LOWER(ISNULL(sa.Position, '')) LIKE '%runner%' THEN 1 ELSE 0 END) AS SecondPlaceCount,
+    SUM(CASE WHEN LOWER(ISNULL(sa.Position, '')) LIKE '%3rd%' THEN 1 ELSE 0 END) AS ThirdPlaceCount,
+    CAST(CASE
+        WHEN COUNT(DISTINCT CASE WHEN r.Status = 'Attended' OR a.AttendanceID IS NOT NULL THEN r.EventID END) = 0 THEN 0
+        ELSE
+            (COUNT(DISTINCT CASE WHEN LOWER(ISNULL(sa.Position, '')) LIKE '%1st%' OR LOWER(ISNULL(sa.Position, '')) LIKE '%winner%' OR LOWER(ISNULL(sa.Position, '')) LIKE '%2nd%' OR LOWER(ISNULL(sa.Position, '')) LIKE '%runner%' OR LOWER(ISNULL(sa.Position, '')) LIKE '%3rd%' THEN sa.AchievementID END) * 100.0)
+            / COUNT(DISTINCT CASE WHEN r.Status = 'Attended' OR a.AttendanceID IS NOT NULL THEN r.EventID END)
+    END AS DECIMAL(5,2)) AS CompetitionWinRatePercent
+FROM StudentProfiles sp
+JOIN Users u ON u.UserID = sp.UserID
+LEFT JOIN Registrations r ON r.UserID = sp.UserID
+LEFT JOIN Attendance a ON a.RegistrationID = r.RegistrationID
+LEFT JOIN StudentAchievements sa ON sa.UserID = sp.UserID
+GROUP BY sp.UserID, sp.FirstName, sp.LastName, u.Email, sp.Department, sp.YearOfStudy;
+GO
+
+CREATE OR ALTER VIEW vw_StudentAchievementTimeline AS
+SELECT
+    sa.UserID,
+    DATEFROMPARTS(YEAR(sa.AchievementDate), MONTH(sa.AchievementDate), 1) AS MonthStart,
+    COUNT(*) AS AchievementsCount,
+    COUNT(DISTINCT sa.EventID) AS DistinctEvents,
+    STRING_AGG(CAST(e.Title AS NVARCHAR(MAX)), ' | ') AS EventTitles
+FROM StudentAchievements sa
+JOIN Events e ON e.EventID = sa.EventID
+GROUP BY sa.UserID, DATEFROMPARTS(YEAR(sa.AchievementDate), MONTH(sa.AchievementDate), 1);
+GO
+
+CREATE OR ALTER VIEW vw_StudentPortfolioPdfData AS
+SELECT
+    s.UserID,
+    s.StudentName,
+    s.Email,
+    s.Department,
+    s.YearOfStudy,
+    s.TotalEventsAttended,
+    s.TotalEventsRegistered,
+    s.TotalAchievements,
+    s.FirstPlaceCount,
+    s.SecondPlaceCount,
+    s.ThirdPlaceCount,
+    s.CompetitionWinRatePercent,
+    sp.LinkedInURL,
+    sp.GitHubURL,
+    sa.AchievementID,
+    sa.Position,
+    sa.AchievementDate,
+    sa.Description AS AchievementDescription,
+    e.EventID,
+    e.Title AS EventTitle,
+    e.EventType,
+    e.EventDate,
+    op.OrganizationName AS OrganizerName
+FROM vw_StudentPortfolioSummary s
+JOIN StudentProfiles sp ON sp.UserID = s.UserID
+LEFT JOIN StudentAchievements sa ON sa.UserID = s.UserID
+LEFT JOIN Events e ON e.EventID = sa.EventID
+LEFT JOIN OrganizerProfiles op ON op.UserID = e.OrganizerID;
 GO

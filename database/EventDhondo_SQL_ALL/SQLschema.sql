@@ -333,7 +333,10 @@ CREATE TABLE [EventReviews] (
     FOREIGN KEY ([EventID]) REFERENCES [Events]([EventID]) ON DELETE CASCADE,
     FOREIGN KEY ([UserID]) REFERENCES [Users]([UserID]) ON DELETE CASCADE,
     FOREIGN KEY ([AttendanceID]) REFERENCES [Attendance]([AttendanceID]) ON DELETE NO ACTION, -- Don't cascade delete attendance if there's a review
-    CONSTRAINT CK_Reviews_OverallRating CHECK ([OverallRating] BETWEEN 1 AND 5)
+    CONSTRAINT CK_Reviews_OverallRating CHECK ([OverallRating] BETWEEN 1 AND 5),
+    CONSTRAINT CK_Reviews_OrganizationQualityRating CHECK ([OrganizationQualityRating] IS NULL OR [OrganizationQualityRating] BETWEEN 1 AND 5),
+    CONSTRAINT CK_Reviews_ContentQualityRating CHECK ([ContentQualityRating] IS NULL OR [ContentQualityRating] BETWEEN 1 AND 5),
+    CONSTRAINT CK_Reviews_VenueRating CHECK ([VenueRating] IS NULL OR [VenueRating] BETWEEN 1 AND 5)
 );
 
 CREATE TABLE [ReviewResponses] (

@@ -1541,6 +1541,12 @@ const router = express.Router();
 const { sql, poolPromise } = require('./db');
 const { authMiddleware } = require('./middleware/auth');
 const REQUEST_PAYLOAD_PREFIX = '__REQUEST_PAYLOAD__:';
+const ALLOWED_CITIES = ['Lahore', 'Islamabad', 'Karachi'];
+const normalizeAllowedCity = (value) => {
+    const raw = String(value || '').trim().toLowerCase();
+    const match = ALLOWED_CITIES.find((city) => city.toLowerCase() === raw);
+    return match || null;
+};
 
 // ─── QR Token helpers ──────────────────────────────────────────────────────
 
@@ -1724,13 +1730,13 @@ router.get('/users/:userId/qr-token', async (req, res) => {
 // ─── Route: GET /events ────────────────────────────────────────────────────
 router.get('/events', async (req, res) => {
     try {
-        const { category, search, date, organizerId } = req.query;
+        const { category, search, date, organizerId, city } = req.query;
         const hasOrganizerFilter = Number.isInteger(Number(organizerId));
 
         let query = hasOrganizerFilter
             ? `
                 SELECT e.EventID, e.OrganizerID, e.Title, e.Description, e.EventType,
-                    e.EventDate, e.EventTime, e.Venue, e.Capacity, e.Status, e.PosterURL,
+                    e.EventDate, e.EventTime, e.Venue, e.City, e.Capacity, e.Status, e.PosterURL,
                     o.OrganizationName AS Organizer, o.ContactEmail AS OrganizerEmail,
                     o.ProfilePictureURL AS OrganizerLogo, NULL AS Category
                 FROM Events e
@@ -1746,6 +1752,10 @@ router.get('/events', async (req, res) => {
         if (category) { query += ' AND Category = @Category'; request.input('Category', sql.NVarChar, category); }
         if (search) { query += ' AND (Title LIKE @Search OR Description LIKE @Search)'; request.input('Search', sql.NVarChar, `%${search}%`); }
         if (date) { query += ' AND EventDate = @Date'; request.input('Date', sql.Date, date); }
+        if (city) {
+            query += hasOrganizerFilter ? ' AND e.City = @City' : ' AND City = @City';
+            request.input('City', sql.NVarChar(100), String(city).trim());
+        }
 
         const result = await request.query(query);
         res.json(result.recordset);
@@ -1773,10 +1783,10 @@ router.get('/events/:id', async (req, res) => {
             .query(`
                 SELECT TOP 1
                     e.EventID, e.OrganizerID, e.Title, e.Description, e.EventType,
-                    e.EventDate, e.EventTime, e.Venue, e.Capacity, e.Status, e.PosterURL,
+                    e.EventDate, e.EventTime, e.Venue, e.City, e.Capacity, e.Status, e.PosterURL,
                     e.RegistrationDeadline,
                     op.OrganizationName AS Organizer, op.ContactEmail AS OrganizerEmail,
-                    op.Description AS OrganizerDescription, op.ProfilePictureURL AS OrganizerLogo,
+                    op.Description AS OrganizerDescription, op.City AS OrganizerCity, op.ProfilePictureURL AS OrganizerLogo,
                     u.Email AS OrganizerAccountEmail,
                     (SELECT COUNT(*) FROM Registrations r
                      WHERE r.EventID = e.EventID AND r.Status = 'Confirmed') AS ConfirmedRegistrations
@@ -1876,6 +1886,7 @@ router.post('/events/check-in', async (req, res) => {
                         SELECT CAST(0 AS BIT) AS Success, 'Student not found. Ask student to verify their QR code.' AS Message; RETURN;
                     END
 
+                    -- Check if there's an active (non-cancelled) registration
                     SELECT TOP 1 @RegistrationID = RegistrationID
                     FROM [dbo].[Registrations]
                     WHERE UserID = @UserID AND EventID = @EventID AND Status <> 'Cancelled'
@@ -1883,21 +1894,55 @@ router.post('/events/check-in', async (req, res) => {
 
                     IF @RegistrationID IS NULL
                     BEGIN
-                        -- Auto-register the student and record attendance separately.
-                        INSERT INTO [dbo].[Registrations] (EventID, UserID, Status, QRCode)
-                        VALUES (@EventID, @UserID, 'Confirmed', @StudentQRCode);
-                        SET @RegistrationID = SCOPE_IDENTITY();
+                        -- Check if registration exists but is cancelled
+                        DECLARE @CheckCancelledCount INT;
+                        SELECT @CheckCancelledCount = COUNT(*)
+                        FROM [dbo].[Registrations]
+                        WHERE UserID = @UserID AND EventID = @EventID AND Status = 'Cancelled';
 
-                        IF NOT EXISTS (SELECT 1 FROM [dbo].[Attendance] WHERE RegistrationID = @RegistrationID)
-                            INSERT INTO [dbo].[Attendance] (RegistrationID) VALUES (@RegistrationID);
+                        IF @CheckCancelledCount > 0
+                        BEGIN
+                            SELECT CAST(0 AS BIT) AS Success, 
+                                'This student cancelled their registration for this event. Please verify with them before registering again.' AS Message;
+                            RETURN;
+                        END
 
-                        SELECT CAST(1 AS BIT) AS Success,
-                               'Attendance marked! (Student was auto-registered for this event.)' AS Message;
-                        RETURN;
+                        -- Try to auto-register the student and record attendance with 'Attended' status directly.
+                        BEGIN TRY
+                            INSERT INTO [dbo].[Registrations] (EventID, UserID, Status, QRCode)
+                            VALUES (@EventID, @UserID, 'Attended', @StudentQRCode);
+                            SET @RegistrationID = SCOPE_IDENTITY();
+
+                            IF @RegistrationID IS NOT NULL AND NOT EXISTS (SELECT 1 FROM [dbo].[Attendance] WHERE RegistrationID = @RegistrationID)
+                                INSERT INTO [dbo].[Attendance] (RegistrationID) VALUES (@RegistrationID);
+
+                            SELECT CAST(1 AS BIT) AS Success,
+                                   'Attendance marked! (Student was auto-registered for this event.)' AS Message;
+                            RETURN;
+                        END TRY
+                        BEGIN CATCH
+                            SELECT CAST(0 AS BIT) AS Success,
+                                'Could not register student. They may have already been registered for this event.' AS Message;
+                            RETURN;
+                        END CATCH
                     END
 
+                    -- Mark attendance for existing registration by updating status and creating attendance record
                     IF NOT EXISTS (SELECT 1 FROM [dbo].[Attendance] WHERE RegistrationID = @RegistrationID)
+                    BEGIN
                         INSERT INTO [dbo].[Attendance] (RegistrationID) VALUES (@RegistrationID);
+                        
+                        UPDATE [dbo].[Registrations]
+                        SET Status = 'Attended'
+                        WHERE RegistrationID = @RegistrationID AND Status != 'Attended';
+                    END
+                    ELSE
+                    BEGIN
+                        -- Attendance already marked, just ensure status is updated to 'Attended'
+                        UPDATE [dbo].[Registrations]
+                        SET Status = 'Attended'
+                        WHERE RegistrationID = @RegistrationID AND Status != 'Attended';
+                    END
 
                     SELECT CAST(1 AS BIT) AS Success, 'Attendance marked!' AS Message;
                 `);
@@ -1925,7 +1970,7 @@ router.post('/events/check-in', async (req, res) => {
                 IF @RegistrationID IS NULL
                 BEGIN
                     SELECT CAST(0 AS BIT) AS Success,
-                        'QR code not recognised 1. Please use the student QR from the QR Code tab.' AS Message;
+                        'QR code not recognised. Please use the student QR from the QR Code tab.' AS Message;
                     RETURN;
                 END
 
@@ -1936,7 +1981,19 @@ router.post('/events/check-in', async (req, res) => {
                 END
 
                 IF NOT EXISTS (SELECT 1 FROM [dbo].[Attendance] WHERE RegistrationID = @RegistrationID)
+                BEGIN
                     INSERT INTO [dbo].[Attendance] (RegistrationID) VALUES (@RegistrationID);
+                    
+                    UPDATE [dbo].[Registrations]
+                    SET Status = 'Attended'
+                    WHERE RegistrationID = @RegistrationID AND Status != 'Attended';
+                END
+                ELSE
+                BEGIN
+                    UPDATE [dbo].[Registrations]
+                    SET Status = 'Attended'
+                    WHERE RegistrationID = @RegistrationID AND Status != 'Attended';
+                END
 
                 SELECT CAST(1 AS BIT) AS Success, 'Attendance marked!' AS Message;
             `);
@@ -1946,12 +2003,40 @@ router.post('/events/check-in', async (req, res) => {
 
         return res.status(400).json({
             success: false,
-            message: legacyRow?.Message || 'QR code not recognised 2. Please use the student QR from the QR Code tab.',
+            message: legacyRow?.Message || 'QR code not recognised. Please use the student QR from the QR Code tab.',
         });
 
     } catch (err) {
         console.error('Check-In Error:', err);
-        return res.status(500).json({ success: false, message: err.message || 'Internal server error during check-in.' });
+        
+        // Provide user-friendly error messages
+        const errorMsg = String(err?.message || '').toLowerCase();
+        
+        if (errorMsg.includes('not found') || errorMsg.includes('no rows')) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'QR code not found. The student may not be registered for this event.' 
+            });
+        }
+        
+        if (errorMsg.includes('null') && errorMsg.includes('registrationid')) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Could not process attendance. The student may not be registered for this event.' 
+            });
+        }
+        
+        if (errorMsg.includes('unique') || errorMsg.includes('duplicate')) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'The student is already registered for this event.' 
+            });
+        }
+        
+        return res.status(500).json({ 
+            success: false, 
+            message: 'An error occurred while marking attendance. Please try again.' 
+        });
     }
 });
 
@@ -2018,7 +2103,7 @@ router.get('/notifications/:userId', async (req, res) => {
 router.post('/events', authMiddleware, async (req, res) => {
     const {
         title, description, eventType, eventDate, eventTime,
-        venue, capacity, registrationDeadline, posterURL, status,
+        venue, city, capacity, registrationDeadline, posterURL, status,
     } = req.body || {};
 
     const parsedOrganizerId = req.user?.UserID;
@@ -2035,6 +2120,7 @@ router.post('/events', authMiddleware, async (req, res) => {
     const normalizedTitle = String(title || '').trim();
     const normalizedType = String(eventType || '').trim();
     const normalizedVenue = venue === undefined ? null : (String(venue || '').trim() || null);
+    const normalizedCity = normalizeAllowedCity(city);
     const normalizedDescription = description === undefined ? null : (String(description || '').trim() || null);
     const normalizedPoster = posterURL === undefined ? null : (String(posterURL || '').trim() || null);
     const normalizedStatus = String(status || 'Published').trim() || 'Published';
@@ -2089,6 +2175,8 @@ router.post('/events', authMiddleware, async (req, res) => {
     if (!normalizedEventTime) return res.status(400).json({ success: false, message: 'eventTime is required' });
     if (!Number.isInteger(parsedCapacity) || parsedCapacity <= 0)
         return res.status(400).json({ success: false, message: 'capacity must be greater than 0' });
+    if (!normalizedCity)
+        return res.status(400).json({ success: false, message: `city must be one of: ${ALLOWED_CITIES.join(', ')}` });
     if (normalizedPoster && normalizedPoster.length > 255)
         return res.status(400).json({ success: false, message: 'posterURL is too long (max 255 characters).' });
 
@@ -2116,6 +2204,7 @@ router.post('/events', authMiddleware, async (req, res) => {
             .input('EventDate', sql.Date, normalizedEventDate)
             .input('EventTime', sql.NVarChar(20), normalizedEventTime)
             .input('Venue', sql.NVarChar(150), normalizedVenue)
+            .input('City', sql.NVarChar(100), normalizedCity)
             .input('Capacity', sql.Int, parsedCapacity)
             .input('RegistrationDeadline', sql.DateTimeOffset, parsedDeadline)
             .input('Status', sql.NVarChar(20), normalizedStatus)
@@ -2123,10 +2212,10 @@ router.post('/events', authMiddleware, async (req, res) => {
             .query(`
                 INSERT INTO [dbo].[Events]
                     (OrganizerID, Title, Description, EventType, EventDate, EventTime,
-                     Venue, Capacity, RegistrationDeadline, Status, PosterURL)
+                     Venue, City, Capacity, RegistrationDeadline, Status, PosterURL)
                 OUTPUT INSERTED.*
                 VALUES (@OrganizerID, @Title, @Description, @EventType, @EventDate,
-                        CAST(@EventTime AS TIME), @Venue, @Capacity, @RegistrationDeadline,
+                    CAST(@EventTime AS TIME), @Venue, @City, @Capacity, @RegistrationDeadline,
                         @Status, @PosterURL)
             `);
 
@@ -2243,7 +2332,7 @@ router.put('/events/:id', authMiddleware, async (req, res) => {
     if (!requesterId) return res.status(401).json({ success: false, message: 'Authentication required' });
     if (!Number.isInteger(eventId) || eventId <= 0) return res.status(400).json({ success: false, message: 'Invalid event id' });
 
-    const { title, description, eventType, eventDate, eventTime, venue, capacity, registrationDeadline, posterURL, status } = req.body || {};
+    const { title, description, eventType, eventDate, eventTime, venue, city, capacity, registrationDeadline, posterURL, status } = req.body || {};
     const normalizeDate = (v) => { if (!v) return null; const p = new Date(v); return Number.isNaN(p.getTime()) ? null : p.toISOString().slice(0,10); };
     const normalizeTime = (v) => { if (!v) return null; const raw = String(v).trim().toLowerCase(); const hhmm = raw.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/); if (hhmm) { const h = Number(hhmm[1]), m = Number(hhmm[2]), s = Number(hhmm[3]||0); if (h>23||m>59||s>59) return null; return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`; } return null; };
 
@@ -2253,6 +2342,7 @@ router.put('/events/:id', authMiddleware, async (req, res) => {
     const normalizedDate = normalizeDate(eventDate);
     const normalizedTime = normalizeTime(eventTime);
     const normalizedVenue = String(venue||'').trim()||null;
+    const normalizedCity = normalizeAllowedCity(city);
     const normalizedDescription = description === undefined ? null : (String(description||'').trim()||null);
     const normalizedStatus = String(status||'').trim()||'Draft';
     const normalizedPoster = String(posterURL||'').trim()||null;
@@ -2260,6 +2350,7 @@ router.put('/events/:id', authMiddleware, async (req, res) => {
 
     if (!normalizedTitle||!normalizedType||!normalizedDate||!normalizedTime) return res.status(400).json({ success: false, message: 'title, eventType, eventDate and eventTime are required' });
     if (!Number.isInteger(parsedCapacity)||parsedCapacity<=0) return res.status(400).json({ success: false, message: 'capacity must be greater than 0' });
+    if (!normalizedCity) return res.status(400).json({ success: false, message: `city must be one of: ${ALLOWED_CITIES.join(', ')}` });
     if (!normalizedDeadline||Number.isNaN(normalizedDeadline.getTime())) return res.status(400).json({ success: false, message: 'registrationDeadline must be a valid date-time' });
     if (normalizedPoster && normalizedPoster.length > 255) return res.status(400).json({ success: false, message: 'posterURL is too long (max 255 characters).' });
     if (normalizedDeadline.toISOString().slice(0,10) > normalizedDate) return res.status(400).json({ success: false, message: 'Registration deadline date cannot be after event date.' });
@@ -2279,13 +2370,14 @@ router.put('/events/:id', authMiddleware, async (req, res) => {
             .input('EventDate', sql.Date, normalizedDate)
             .input('EventTime', sql.NVarChar(20), normalizedTime)
             .input('Venue', sql.NVarChar(150), normalizedVenue)
+            .input('City', sql.NVarChar(100), normalizedCity)
             .input('Capacity', sql.Int, parsedCapacity)
             .input('RegistrationDeadline', sql.DateTimeOffset, normalizedDeadline)
             .input('Status', sql.NVarChar(20), normalizedStatus)
             .input('PosterURL', sql.NVarChar(sql.MAX), normalizedPoster)
             .query(`
                 UPDATE Events SET Title=@Title, Description=@Description, EventType=@EventType,
-                    EventDate=@EventDate, EventTime=CAST(@EventTime AS TIME), Venue=@Venue,
+                    EventDate=@EventDate, EventTime=CAST(@EventTime AS TIME), Venue=@Venue, City=@City,
                     Capacity=@Capacity, RegistrationDeadline=@RegistrationDeadline, Status=@Status,
                     PosterURL=@PosterURL, UpdatedAt=SYSDATETIMEOFFSET()
                 WHERE EventID = @EventID;
@@ -2403,13 +2495,13 @@ router.get('/profile/:id', authMiddleware, async (req, res) => {
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
         if (String(user.Role||'').toLowerCase() === 'organizer') {
-            const r = await pool.request().input('UserID', sql.Int, userId).query(`SELECT u.UserID, u.Email, u.Role, o.OrganizationName, o.Description, o.ContactEmail, o.ProfilePictureURL, o.VerificationStatus FROM Users u JOIN OrganizerProfiles o ON u.UserID = o.UserID WHERE u.UserID = @UserID`);
+            const r = await pool.request().input('UserID', sql.Int, userId).query(`SELECT u.UserID, u.Email, u.Role, o.OrganizationName, o.Description, o.ContactEmail, o.City, o.ProfilePictureURL, o.VerificationStatus FROM Users u JOIN OrganizerProfiles o ON u.UserID = o.UserID WHERE u.UserID = @UserID`);
             const profile = r.recordset?.[0];
             if (!profile) return res.status(404).json({ success: false, message: 'Organizer profile not found' });
             return res.json(profile);
         }
 
-        const r = await pool.request().input('UserID', sql.Int, userId).query(`SELECT u.UserID, u.Email, s.FirstName, s.LastName, s.Department, s.YearOfStudy, s.DateOfBirth, s.ProfilePictureURL, s.LinkedInURL, s.GitHubURL FROM Users u JOIN StudentProfiles s ON u.UserID = s.UserID WHERE u.UserID = @UserID`);
+        const r = await pool.request().input('UserID', sql.Int, userId).query(`SELECT u.UserID, u.Email, s.FirstName, s.LastName, s.Department, s.City, s.YearOfStudy, s.DateOfBirth, s.ProfilePictureURL, s.LinkedInURL, s.GitHubURL FROM Users u JOIN StudentProfiles s ON u.UserID = s.UserID WHERE u.UserID = @UserID`);
         const profile = r.recordset?.[0];
         if (!profile) return res.status(404).json({ success: false, message: 'Student profile not found' });
         return res.json(profile);
@@ -2425,7 +2517,8 @@ router.put('/profile/:id', authMiddleware, async (req, res) => {
     if (req.user?.Role !== 'Admin' && targetUserId !== requestingUserId) return res.status(403).json({ success: false, message: 'You can only edit your own profile' });
     if (!Number.isInteger(targetUserId) || targetUserId <= 0) return res.status(400).json({ success: false, message: 'Valid user id is required' });
 
-    const { role, firstName, lastName, department, year, dateOfBirth, profilePictureURL, linkedInURL, gitHubURL, interests, organizationName, description, contactEmail } = req.body;
+    const { role, firstName, lastName, department, city, year, dateOfBirth, profilePictureURL, linkedInURL, gitHubURL, interests, organizationName, description, contactEmail } = req.body;
+    const normalizedProfileCity = normalizeAllowedCity(city);
 
     try {
         const pool = await poolPromise;
@@ -2438,31 +2531,39 @@ router.put('/profile/:id', authMiddleware, async (req, res) => {
         const effectiveRole = requestedRole || dbRole;
 
         if (effectiveRole === 'organizer' || dbRole === 'organizer') {
+            if (!normalizedProfileCity) {
+                return res.status(400).json({ success: false, message: `city must be one of: ${ALLOWED_CITIES.join(', ')}` });
+            }
             const result = await pool.request()
                 .input('UserID', sql.Int, targetUserId)
                 .input('OrganizationName', sql.NVarChar(150), String(organizationName||'').trim()||null)
                 .input('Description', sql.NVarChar(sql.MAX), description === undefined ? undefined : (String(description||'').trim()||null))
                 .input('ContactEmail', sql.NVarChar(100), String(contactEmail||'').trim()||null)
+                .input('City', sql.NVarChar(100), normalizedProfileCity)
                 .input('ProfilePictureURL', sql.NVarChar(sql.MAX), profilePictureURL||null)
-                .query(`UPDATE OrganizerProfiles SET OrganizationName=COALESCE(@OrganizationName,OrganizationName), Description=COALESCE(@Description,Description), ContactEmail=COALESCE(@ContactEmail,ContactEmail), ProfilePictureURL=@ProfilePictureURL WHERE UserID=@UserID`);
+                .query(`UPDATE OrganizerProfiles SET OrganizationName=COALESCE(@OrganizationName,OrganizationName), Description=COALESCE(@Description,Description), ContactEmail=COALESCE(@ContactEmail,ContactEmail), City=COALESCE(@City,City), ProfilePictureURL=@ProfilePictureURL WHERE UserID=@UserID`);
             if ((result.rowsAffected?.[0]||0) === 0) return res.status(404).json({ success: false, message: 'Organizer profile not found' });
             return res.json({ success: true, role: 'Organizer' });
         }
 
         const parsedDob = dateOfBirth ? new Date(dateOfBirth) : null;
         if (dateOfBirth && Number.isNaN(parsedDob?.getTime())) return res.status(400).json({ success: false, message: 'dateOfBirth must be a valid date' });
+        if (!normalizedProfileCity) {
+            return res.status(400).json({ success: false, message: `city must be one of: ${ALLOWED_CITIES.join(', ')}` });
+        }
 
         await pool.request()
             .input('UserID', sql.Int, targetUserId)
             .input('FirstName', sql.NVarChar(50), firstName||null)
             .input('LastName', sql.NVarChar(50), lastName||null)
             .input('Department', sql.NVarChar(100), department||null)
+            .input('City', sql.NVarChar(100), normalizedProfileCity)
             .input('Year', sql.Int, Number.isInteger(Number(year)) ? Number(year) : null)
             .input('DateOfBirth', sql.Date, dateOfBirth ? parsedDob : null)
             .input('ProfilePictureURL', sql.NVarChar(sql.MAX), profilePictureURL||null)
             .input('LinkedIn', sql.NVarChar(255), linkedInURL||null)
             .input('GitHub', sql.NVarChar(255), gitHubURL||null)
-            .query(`UPDATE StudentProfiles SET FirstName=@FirstName, LastName=@LastName, Department=@Department, YearOfStudy=COALESCE(@Year,YearOfStudy), DateOfBirth=@DateOfBirth, ProfilePictureURL=@ProfilePictureURL, LinkedInURL=@LinkedIn, GitHubURL=@GitHub WHERE UserID=@UserID`);
+            .query(`UPDATE StudentProfiles SET FirstName=@FirstName, LastName=@LastName, Department=@Department, City=@City, YearOfStudy=COALESCE(@Year,YearOfStudy), DateOfBirth=@DateOfBirth, ProfilePictureURL=@ProfilePictureURL, LinkedInURL=@LinkedIn, GitHubURL=@GitHub WHERE UserID=@UserID`);
 
         if (Array.isArray(interests)) {
             await pool.request().input('UserID', sql.Int, targetUserId).query('DELETE FROM UserInterests WHERE UserID=@UserID');
@@ -2482,13 +2583,15 @@ router.post('/events/request', authMiddleware, async (req, res) => {
     const userId = req.user?.UserID;
     if (!userId) return res.status(401).json({ success: false, message: 'Authentication required' });
 
-    const { title, description, eventType, eventDate, eventTime, venue, capacity, registrationDeadline, posterURL } = req.body;
+    const { title, description, eventType, eventDate, eventTime, venue, city, capacity, registrationDeadline, posterURL } = req.body;
     if (!title) return res.status(400).json({ success: false, message: 'Event title is required' });
     if (!eventDate) return res.status(400).json({ success: false, message: 'Event date is required' });
+    const normalizedRequestCity = normalizeAllowedCity(city);
+    if (!normalizedRequestCity) return res.status(400).json({ success: false, message: `city must be one of: ${ALLOWED_CITIES.join(', ')}` });
 
     try {
         const pool = await poolPromise;
-        const payload = `${REQUEST_PAYLOAD_PREFIX}${JSON.stringify({ title, description, eventType, eventDate, eventTime, venue, capacity, registrationDeadline, posterURL })}`;
+        const payload = `${REQUEST_PAYLOAD_PREFIX}${JSON.stringify({ title, description, eventType, eventDate, eventTime, venue, city: normalizedRequestCity, capacity, registrationDeadline, posterURL })}`;
         const insertResult = await pool.request()
             .input('StudentID', sql.Int, userId)
             .input('Title', sql.NVarChar(200), title)

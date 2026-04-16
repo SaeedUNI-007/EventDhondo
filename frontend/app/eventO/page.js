@@ -3,12 +3,14 @@ import { useState } from "react";
 import Link from "next/link";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const ALLOWED_CITIES = ['Lahore', 'Islamabad', 'Karachi'];
 
 export default function EventOCreate() {
   const [title, setTitle] = useState("");
   const [eventDate, setEventDate] = useState("");
   const [eventTime, setEventTime] = useState("");
   const [venue, setVenue] = useState("");
+  const [city, setCity] = useState("Lahore");
   const [description, setDescription] = useState("");
   const [eventType, setEventType] = useState("Competition");
   const [capacity, setCapacity] = useState(50);
@@ -46,6 +48,7 @@ export default function EventOCreate() {
       eventDate,
       eventTime,
       venue,
+      city,
       description,
       eventType,
       capacity: Number(capacity) || 0,
@@ -114,6 +117,15 @@ export default function EventOCreate() {
           <div>
             <label className="block text-sm font-medium">Venue</label>
             <input value={venue} onChange={e=>setVenue(e.target.value)} className="w-full p-2 border rounded" />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium">City</label>
+            <select value={city} onChange={e=>setCity(e.target.value)} className="w-full p-2 border rounded" required>
+              {ALLOWED_CITIES.map((cityOption) => (
+                <option key={cityOption} value={cityOption}>{cityOption}</option>
+              ))}
+            </select>
           </div>
 
           <div>

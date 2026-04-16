@@ -3,6 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const ALLOWED_CITIES = ['Lahore', 'Islamabad', 'Karachi'];
 
 export default function EventRequestPage() {
   const [form, setForm] = useState({
@@ -12,6 +13,7 @@ export default function EventRequestPage() {
     eventDate: "",
     eventTime: "",
     venue: "",
+    city: "Lahore",
     capacity: "",
     registrationDeadline: "",
     posterURL: "",
@@ -54,6 +56,7 @@ export default function EventRequestPage() {
           eventDate: form.eventDate,
           eventTime: form.eventTime,
           venue: form.venue,
+          city: form.city,
           capacity: parseInt(form.capacity, 10) || 0,
           registrationDeadline: form.registrationDeadline,
           posterURL: form.posterURL,
@@ -74,6 +77,7 @@ export default function EventRequestPage() {
         eventDate: "",
         eventTime: "",
         venue: "",
+        city: "Lahore",
         capacity: "",
         registrationDeadline: "",
         posterURL: "",
@@ -117,6 +121,15 @@ export default function EventRequestPage() {
             <div>
               <label className="block text-sm font-medium">Venue</label>
               <input name="venue" value={form.venue} onChange={handleChange} className="w-full p-2 border rounded" />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium">City *</label>
+              <select name="city" value={form.city} onChange={handleChange} className="w-full p-2 border rounded" required>
+                {ALLOWED_CITIES.map((cityOption) => (
+                  <option key={cityOption} value={cityOption}>{cityOption}</option>
+                ))}
+              </select>
             </div>
           </div>
 

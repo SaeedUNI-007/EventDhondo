@@ -153,6 +153,7 @@ export default function ViewEventOrg() {
   const seatsLeft = capacity > 0 ? Math.max(capacity - confirmed, 0) : null;
   const organizerName = eventData.Organizer || "Organization";
   const organizerEmail = eventData.OrganizerEmail || eventData.OrganizerAccountEmail || "Not shared";
+  const organizerCity = eventData.OrganizerCity || eventData.City || "Not specified";
   const organizerDescription = eventData.OrganizerDescription || "No organizer description available.";
   const organizerLogo = eventData.OrganizerLogo || DEFAULT_ORGANIZER_LOGO;
   const posterSrc = eventData.PosterURL || DEFAULT_EVENT_POSTER;
@@ -265,6 +266,7 @@ export default function ViewEventOrg() {
             <p className="text-sm"><strong>Date:</strong> {formatDate(eventData.eventDate || eventData.EventDate)}</p>
             <p className="text-sm"><strong>Time:</strong> {formatTime(eventData.eventTime || eventData.EventTime || eventData.Time)}</p>
             <p className="text-sm"><strong>Venue:</strong> {eventData.venue || eventData.Venue || "TBA"}</p>
+            <p className="text-sm"><strong>City:</strong> {eventData.city || eventData.City || "Not specified"}</p>
             <p className="text-sm"><strong>Registration Deadline:</strong> {formatDate(eventData.RegistrationDeadline)}</p>
             <p className="text-sm"><strong>Capacity:</strong> {capacity || "Unlimited"}</p>
             <p className="text-sm"><strong>Confirmed:</strong> {confirmed}</p>
@@ -281,6 +283,7 @@ export default function ViewEventOrg() {
                 <div>
                   <p className="text-sm font-semibold text-slate-800">{organizerName}</p>
                   <p className="text-xs text-slate-500">{organizerEmail}</p>
+                  <p className="text-xs text-slate-500">{organizerCity}</p>
                   <p className="mt-1 text-xs text-slate-600">{organizerDescription}</p>
                 </div>
               </div>

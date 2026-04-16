@@ -8,6 +8,7 @@ import RegisterBranding from '@/components/RegisterBranding';
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 const MAX_PROFILE_PICTURE_BYTES = 1024 * 1024;
 const NAV_LOGO_SRC = '/Logo.png';
+const ALLOWED_CITIES = ['Lahore', 'Islamabad', 'Karachi'];
 
 export default function Register() {
   const [allAvailableInterests, setAllAvailableInterests] = useState([]);
@@ -21,6 +22,8 @@ export default function Register() {
   const [password, setPassword] = useState('');
   const [program, setProgram] = useState('BS - CS');
   const [yearOfStudy, setYearOfStudy] = useState('1');
+  const [studentCity, setStudentCity] = useState('Lahore');
+  const [organizerCity, setOrganizerCity] = useState('Lahore');
   const [dob, setDob] = useState('');
   const [profilePictureDataUrl, setProfilePictureDataUrl] = useState('');
   const [interests, setInterests] = useState([]);
@@ -140,6 +143,11 @@ export default function Register() {
         return;
       }
 
+      if (!studentCity.trim()) {
+        setError('City is required for students.');
+        return;
+      }
+
       const numericYear = Number(yearOfStudy);
       if (!Number.isInteger(numericYear) || numericYear < 1 || numericYear > 8) {
         setError('Year of Study must be an integer between 1 and 8.');
@@ -152,6 +160,9 @@ export default function Register() {
       }
     } else if (!organizationName.trim() || !contactEmail.trim()) {
       setError('Organization name and contact email are required for organizers.');
+      return;
+    } else if (!organizerCity.trim()) {
+      setError('City is required for organizers.');
       return;
     }
 
@@ -173,6 +184,7 @@ export default function Register() {
           firstName: firstName.trim(),
           lastName: lastName.trim(),
           department: subject || null,
+          city: studentCity.trim() || null,
           degree: degreeLevel || null,
           yearOfStudy: Number(yearOfStudy) || null,
           dateOfBirth: dob || null,
@@ -183,6 +195,7 @@ export default function Register() {
           organizationName: organizationName.trim(),
           description: organizationDescription.trim() || null,
           contactEmail: contactEmail.trim(),
+          city: organizerCity.trim() || null,
           profilePictureURL: profilePictureDataUrl || null
         };
       }
@@ -264,6 +277,18 @@ export default function Register() {
               </>
             )}
           </div>
+
+          <label className="mt-3 block text-sm font-semibold text-slate-700">City</label>
+          <select
+            className="mt-1 w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5"
+            value={role === 'student' ? studentCity : organizerCity}
+            onChange={(e) => role === 'student' ? setStudentCity(e.target.value) : setOrganizerCity(e.target.value)}
+            required
+          >
+            {ALLOWED_CITIES.map((city) => (
+              <option key={city} value={city}>{city}</option>
+            ))}
+          </select>
 
           <label className="mt-3 block text-sm font-semibold text-slate-700">University E-mail</label>
           <input className="mt-1 w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5" type="email" placeholder="University Email" value={email} onChange={(e) => setEmail(e.target.value)} required />

@@ -8,6 +8,12 @@ const bcrypt = require('bcrypt');
 const SYSTEM_STUDENT_EVENTS_EMAIL = 'student.events@eventdhondo.local';
 const SYSTEM_STUDENT_EVENTS_ORG = 'Student Event Desk';
 const REQUEST_PAYLOAD_PREFIX = '__REQUEST_PAYLOAD__:';
+const ALLOWED_CITIES = ['Lahore', 'Islamabad', 'Karachi'];
+const normalizeAllowedCity = (value) => {
+    const raw = String(value || '').trim().toLowerCase();
+    const match = ALLOWED_CITIES.find((city) => city.toLowerCase() === raw);
+    return match || null;
+};
 
 // All admin routes require authentication and admin role
 router.use(authMiddleware);
@@ -184,16 +190,18 @@ const ensureStudentEventsOrganizer = async (pool) => {
         .input('OrganizationName', sql.NVarChar(150), SYSTEM_STUDENT_EVENTS_ORG)
         .input('Description', sql.NVarChar(sql.MAX), 'Auto-managed organizer profile for approved student event requests.')
         .input('ContactEmail', sql.NVarChar(100), SYSTEM_STUDENT_EVENTS_EMAIL)
+        .input('City', sql.NVarChar(100), 'Lahore')
         .query(`
             IF NOT EXISTS (SELECT 1 FROM OrganizerProfiles WHERE UserID = @UserID)
             BEGIN
-                INSERT INTO OrganizerProfiles (UserID, OrganizationName, Description, ContactEmail, VerificationStatus)
-                VALUES (@UserID, @OrganizationName, @Description, @ContactEmail, 'Verified');
+                INSERT INTO OrganizerProfiles (UserID, OrganizationName, Description, ContactEmail, City, VerificationStatus)
+                VALUES (@UserID, @OrganizationName, @Description, @ContactEmail, @City, 'Verified');
             END
             ELSE
             BEGIN
                 UPDATE OrganizerProfiles
-                SET VerificationStatus = 'Verified'
+                SET VerificationStatus = 'Verified',
+                    City = COALESCE(NULLIF(City, ''), @City)
                 WHERE UserID = @UserID;
             END
 
@@ -388,6 +396,7 @@ router.put('/event-request/:id', async (req, res) => {
             const eventDateOnly = toDateOnly(payload.eventDate || eventRequest.SuggestedDate);
             const eventTime = normalizeTimeInput(payload.eventTime) || '12:00:00';
             const venue = String(payload.venue || '').trim() || 'TBD';
+            const city = normalizeAllowedCity(payload.city) || 'Lahore';
             const capacity = Math.max(1, Number.parseInt(payload.capacity, 10) || 100);
 
             const requestedDeadline = payload.registrationDeadline ? new Date(payload.registrationDeadline) : null;
@@ -414,6 +423,7 @@ router.put('/event-request/:id', async (req, res) => {
                 .input('EventDate', sql.Date, eventDateOnly)
                 .input('EventTime', sql.NVarChar(20), eventTime)
                 .input('Venue', sql.NVarChar(150), venue)
+                .input('City', sql.NVarChar(100), city)
                 .input('Capacity', sql.Int, capacity)
                 .input('RegistrationDeadline', sql.DateTimeOffset, registrationDeadline)
                 .input('Status', sql.NVarChar(20), 'Published')
@@ -427,6 +437,7 @@ router.put('/event-request/:id', async (req, res) => {
                         EventDate,
                         EventTime,
                         Venue,
+                        City,
                         Capacity,
                         RegistrationDeadline,
                         Status,
@@ -440,6 +451,7 @@ router.put('/event-request/:id', async (req, res) => {
                         @EventDate,
                         CAST(@EventTime AS TIME),
                         @Venue,
+                        @City,
                         @Capacity,
                         @RegistrationDeadline,
                         @Status,

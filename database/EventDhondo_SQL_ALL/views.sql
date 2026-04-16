@@ -6,7 +6,7 @@ GO
 
 CREATE OR ALTER VIEW vw_UpcomingEvents AS
 SELECT 
-    e.EventID, e.Title, e.Description, e.EventType, e.EventDate, e.EventTime, e.Venue, e.Capacity, e.Status, e.PosterURL,
+    e.EventID, e.Title, e.Description, e.EventType, e.EventDate, e.EventTime, e.Venue, e.City, e.Capacity, e.Status, e.PosterURL,
     o.OrganizationName AS Organizer, o.ProfilePictureURL AS OrganizerLogo,
     (SELECT TOP 1 CategoryName FROM EventCategories ec JOIN EventCategoryMapping ecm ON ec.CategoryID = ecm.CategoryID WHERE ecm.EventID = e.EventID) AS Category,
     (e.Capacity - (SELECT COUNT(*) FROM Registrations WHERE EventID = e.EventID AND Status = 'Confirmed')) AS AvailableSeats

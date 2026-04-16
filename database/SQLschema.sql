@@ -62,6 +62,7 @@ CREATE TABLE [StudentProfiles] (
     [FirstName] NVARCHAR(50) NOT NULL,
     [LastName] NVARCHAR(50) NOT NULL,
     [Department] NVARCHAR(100),
+    [City] NVARCHAR(100) CHECK ([City] IN ('Lahore', 'Islamabad', 'Karachi')),
     [YearOfStudy] INT,
     [DateOfBirth] DATE NULL,
     [ProfilePictureURL] NVARCHAR(MAX),
@@ -81,6 +82,13 @@ BEGIN
 END
 GO
 
+IF COL_LENGTH('dbo.StudentProfiles', 'City') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[StudentProfiles]
+    ADD [City] NVARCHAR(100) NULL;
+END
+GO
+
 IF COL_LENGTH('dbo.StudentProfiles', 'ProfilePictureURL') IS NOT NULL
    AND COL_LENGTH('dbo.StudentProfiles', 'ProfilePictureURL') <> -1
 BEGIN
@@ -95,10 +103,18 @@ CREATE TABLE [OrganizerProfiles] (
     [OrganizationName] NVARCHAR(150) NOT NULL UNIQUE,
     [Description] NVARCHAR(MAX),
     [ContactEmail] NVARCHAR(100) NOT NULL,
+    [City] NVARCHAR(100) CHECK ([City] IN ('Lahore', 'Islamabad', 'Karachi')),
     [ProfilePictureURL] NVARCHAR(MAX),
     [VerificationStatus] NVARCHAR(10) NOT NULL DEFAULT 'Pending' CHECK ([VerificationStatus] IN ('Pending', 'Verified', 'Rejected')),
     FOREIGN KEY ([UserID]) REFERENCES [Users]([UserID]) ON DELETE CASCADE
 );
+
+IF COL_LENGTH('dbo.OrganizerProfiles', 'City') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[OrganizerProfiles]
+    ADD [City] NVARCHAR(100) NULL;
+END
+GO
 
 IF COL_LENGTH('dbo.OrganizerProfiles', 'ProfilePictureURL') IS NOT NULL
    AND COL_LENGTH('dbo.OrganizerProfiles', 'ProfilePictureURL') <> -1
@@ -137,6 +153,7 @@ CREATE TABLE [Events] (
     [EventDate] DATE NOT NULL,
     [EventTime] TIME NOT NULL,
     [Venue] NVARCHAR(150),
+    [City] NVARCHAR(100) NOT NULL CHECK ([City] IN ('Lahore', 'Islamabad', 'Karachi')),
     [Capacity] INT NOT NULL,
     [RegistrationDeadline] DATETIMEOFFSET NOT NULL,
     [Status] NVARCHAR(20) NOT NULL DEFAULT 'Draft' CHECK ([Status] IN ('Draft', 'Published', 'Registration Closed', 'Ongoing', 'Completed', 'Cancelled')),
@@ -147,6 +164,13 @@ CREATE TABLE [Events] (
     CONSTRAINT CK_Events_Capacity CHECK ([Capacity] > 0),
     CONSTRAINT CK_Events_Dates CHECK (CAST([RegistrationDeadline] AS DATE) <= [EventDate])
 );
+
+IF COL_LENGTH('dbo.Events', 'City') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[Events]
+    ADD [City] NVARCHAR(100) NULL;
+END
+GO
 
 -- Lookup table for broad event categories.
 CREATE TABLE [EventCategories] (

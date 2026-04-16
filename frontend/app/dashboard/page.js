@@ -16,7 +16,9 @@ export default function DashboardStudent() {
   const [viewMode, setViewMode] = useState('available'); // 'available' | 'yours'
   // filter state (like organizer dashboard)
   const [eventTypes, setEventTypes] = useState([]);
+  const [cityOptions, setCityOptions] = useState([]);
   const [selectedType, setSelectedType] = useState('all');
+  const [selectedCity, setSelectedCity] = useState('all');
   const [dateOrder, setDateOrder] = useState('asc'); // 'asc' | 'desc'
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -46,10 +48,13 @@ export default function DashboardStudent() {
 
           setEvents(data);
           const types = Array.from(new Set(data.map(e => (e.eventType || e.EventType || 'Other')).filter(Boolean)));
+          const cities = Array.from(new Set(data.map((e) => (e.city || e.City || e.organizerCity || e.OrganizerCity || '')).filter(Boolean)));
           setEventTypes(types);
+          setCityOptions(cities);
         } catch (_err) {
           setEvents([]);
           setEventTypes([]);
+          setCityOptions([]);
         }
       };
 
@@ -168,6 +173,9 @@ export default function DashboardStudent() {
     if (selectedType && selectedType !== 'all') {
       list = list.filter(ev => ((ev.eventType || ev.EventType || '').toString().toLowerCase()) === selectedType.toString().toLowerCase());
     }
+    if (selectedCity && selectedCity !== 'all') {
+      list = list.filter((ev) => ((ev.city || ev.City || ev.organizerCity || ev.OrganizerCity || '').toString().toLowerCase()) === selectedCity.toString().toLowerCase());
+    }
     if (searchTerm && searchTerm.trim()) {
       const q = searchTerm.trim().toLowerCase();
       list = list.filter(ev => ((ev.title || ev.Title || '') + ' ' + (ev.description || ev.Description || '')).toLowerCase().includes(q));
@@ -178,7 +186,7 @@ export default function DashboardStudent() {
       return dateOrder === 'asc' ? ad - bd : bd - ad;
     });
     return list;
-  }, [baseEvents, selectedType, searchTerm, dateOrder]);
+  }, [baseEvents, selectedType, selectedCity, searchTerm, dateOrder]);
 
   const SidePanelContent = ({ compact = false }) => {
     const profilePic = typeof window !== 'undefined'
@@ -297,6 +305,15 @@ export default function DashboardStudent() {
                       <option value="asc">Date: Oldest first</option>
                       <option value="desc">Date: Newest first</option>
                     </select>
+
+                    <select
+                      value={selectedCity}
+                      onChange={e => setSelectedCity(e.target.value)}
+                      className="p-2 rounded border bg-white text-sm"
+                    >
+                      <option value="all">All cities</option>
+                      {cityOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
                   </div>
 
                   <div className="flex items-center gap-3">
@@ -308,7 +325,7 @@ export default function DashboardStudent() {
                     />
                     <button
                       type="button"
-                      onClick={() => { setSelectedType('all'); setDateOrder('asc'); setSearchTerm(''); }}
+                      onClick={() => { setSelectedType('all'); setSelectedCity('all'); setDateOrder('asc'); setSearchTerm(''); }}
                       className="px-3 py-2 rounded border text-sm text-slate-700 hover:bg-[var(--surface-soft)]"
                     >
                       Reset
@@ -363,6 +380,7 @@ export default function DashboardStudent() {
                   <h3 className="min-h-[56px] text-lg font-bold text-slate-900">{ev.title || ev.Title}</h3>
                   <p className="mt-1 min-h-[48px] text-sm text-slate-600">{(ev.description || ev.Description || "").slice(0, 120)}</p>
                   <p className="mt-2 text-sm text-slate-600">{ev.venue || ev.Venue || 'TBA'}</p>
+                  <p className="mt-1 text-sm text-slate-600">{ev.city || ev.City || ev.organizerCity || ev.OrganizerCity || 'City not specified'}</p>
 
                   <div className="mt-auto pt-4 flex gap-2">
                     {viewMode === 'available' ? (

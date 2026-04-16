@@ -21,7 +21,9 @@ export default function DashboardO() {
   const [orgName, setOrgName] = useState("Organization");
   const [userEmail, setUserEmail] = useState("");
   const [eventTypes, setEventTypes] = useState([]);
+  const [cityOptions, setCityOptions] = useState([]);
   const [selectedType, setSelectedType] = useState("");
+  const [selectedCity, setSelectedCity] = useState("");
   const [dateOrder, setDateOrder] = useState("asc");
   const [searchTerm, setSearchTerm] = useState("");
   const [removeCandidate, setRemoveCandidate] = useState("");
@@ -65,6 +67,8 @@ export default function DashboardO() {
           : (savedEmail ? list.filter((e) => (e.OrganizerEmail === savedEmail) || (e.Organizer && e.Organizer === savedEmail)) : list);
 
         setEvents(filtered);
+        const cities = Array.from(new Set(filtered.map((e) => (e.City || e.city || "")).filter(Boolean)));
+        setCityOptions(cities);
         // set default remove candidate to first event if exists
         if (filtered.length > 0) setRemoveCandidate(filtered[0].EventID || filtered[0].id || "");
       } catch (err) {
@@ -125,7 +129,8 @@ export default function DashboardO() {
 
       // filter by EventType from schema; empty = all
       const matchesType = !selectedType || String(e.EventType || e.EventCategory || "").toLowerCase() === String(selectedType).toLowerCase();
-      return matchesSearch && matchesType;
+      const matchesCity = !selectedCity || String(e.City || e.city || "").toLowerCase() === String(selectedCity).toLowerCase();
+      return matchesSearch && matchesType && matchesCity;
     })
     .sort((a, b) => {
       const da = a.EventDate ? new Date(a.EventDate) : new Date(a.date || null);
@@ -222,7 +227,7 @@ export default function DashboardO() {
         {/* filter controls aligned left below welcome bar */}
         <div className="mx-auto max-w-[1200px] lg:ml-80 px-4 mb-4">
           <div className="glass rounded-2xl p-4 md:p-5">
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-4">
               <div className="flex flex-col gap-1">
                 <label className="text-sm font-medium text-slate-700">Search</label>
                 <input
@@ -247,6 +252,14 @@ export default function DashboardO() {
                 <select value={dateOrder} onChange={(e) => setDateOrder(e.target.value)} className="rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm">
                   <option value="asc">Ascending</option>
                   <option value="desc">Descending</option>
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-slate-700">City</label>
+                <select value={selectedCity} onChange={(e) => setSelectedCity(e.target.value)} className="rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm">
+                  <option value="">All cities</option>
+                  {cityOptions.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
             </div>
@@ -293,6 +306,7 @@ export default function DashboardO() {
                   <h3 className="min-h-[56px] text-lg font-bold text-slate-900">{ev.Title || ev.title}</h3>
                   <p className="mt-1 min-h-[48px] text-sm text-slate-600">{ev.Description ? ev.Description.slice(0, 120) : ev.description}</p>
                   <p className="mt-2 text-sm text-slate-600">{ev.Venue || ev.venue}</p>
+                  <p className="mt-1 text-sm text-slate-600">{ev.City || ev.city || 'City not specified'}</p>
                   <div className="mt-auto pt-4 flex gap-2">
                     <Link href={`/viewEventO?eventId=${ev.EventID || ev.id || ev.eventId || ""}`} className="cta px-3 py-2 text-sm font-semibold">View</Link>
                     <Link href={`/event/edit/${ev.EventID || ev.id || ev.eventId || ""}`} className="rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm font-semibold hover:bg-[var(--surface-soft)]">Edit</Link>

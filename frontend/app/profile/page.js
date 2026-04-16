@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+const ALLOWED_CITIES = ['Lahore', 'Islamabad', 'Karachi'];
 
 const toDateInputValue = (value) => {
   if (!value) return '';
@@ -30,6 +31,7 @@ export default function ProfilePage() {
   const [dob, setDob] = useState('');
   const [email, setEmail] = useState('');
   const [institution, setInstitution] = useState('');
+  const [city, setCity] = useState('Lahore');
   const [linkA, setLinkA] = useState('');
   const [linkB, setLinkB] = useState('');
   const [profilePictureDataUrl, setProfilePictureDataUrl] = useState('');
@@ -80,6 +82,7 @@ export default function ProfilePage() {
     const savedId = readInitial('studentId') || userId;
     const savedDob = readInitial('dateOfBirth');
     const savedInstitution = readInitial('institution', 'FAST NUCES');
+    const savedCity = readInitial('city', 'Lahore');
     const savedLinkA = readInitial('linkA');
     const savedLinkB = readInitial('linkB');
 
@@ -89,6 +92,7 @@ export default function ProfilePage() {
     setStudentId(savedId || '000000');
     setDob(savedDob || '');
     setInstitution(savedInstitution || 'FAST NUCES');
+    setCity(savedCity || 'Lahore');
     setLinkA(savedLinkA || '');
     setLinkB(savedLinkB || '');
 
@@ -96,7 +100,12 @@ export default function ProfilePage() {
       if (!userId) return;
       try {
         setStatus('Loading profile...');
-        const res = await fetch(`${API_BASE_URL}/api/profile/${encodeURIComponent(userId)}`);
+        const res = await fetch(`${API_BASE_URL}/api/profile/${encodeURIComponent(userId)}`, {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': String(userId),
+          },
+        });
         const data = await res.json();
 
         if (!res.ok || !data) {
@@ -108,6 +117,7 @@ export default function ProfilePage() {
         const resolvedEmail = data.Email || savedEmail || 'no-reply@university.edu';
         const resolvedPic = data.ProfilePictureURL || savedPic || '';
         const resolvedInstitution = data.Department || savedInstitution || 'FAST NUCES';
+        const resolvedCity = data.City || savedCity || 'Lahore';
         const resolvedStudentId = String(data.UserID || userId);
         const resolvedDob = toDateInputValue(data.DateOfBirth) || savedDob || '';
         const resolvedLinkedIn = data.LinkedInURL || savedLinkA || '';
@@ -117,6 +127,7 @@ export default function ProfilePage() {
         setEmail(resolvedEmail);
         setProfilePictureDataUrl(resolvedPic);
         setInstitution(resolvedInstitution);
+        setCity(resolvedCity);
         setStudentId(resolvedStudentId);
         setDob(resolvedDob);
         setLinkA(resolvedLinkedIn);
@@ -126,6 +137,7 @@ export default function ProfilePage() {
         localStorage.setItem(`userEmail:${userId}`, resolvedEmail);
         localStorage.setItem(`profilePictureURL:${userId}`, resolvedPic);
         localStorage.setItem(`institution:${userId}`, resolvedInstitution);
+        localStorage.setItem(`city:${userId}`, resolvedCity);
         localStorage.setItem(`studentId:${userId}`, resolvedStudentId);
         localStorage.setItem(`dateOfBirth:${userId}`, resolvedDob);
         localStorage.setItem(`linkA:${userId}`, resolvedLinkedIn);
@@ -135,6 +147,7 @@ export default function ProfilePage() {
         sessionStorage.setItem('userEmail', resolvedEmail);
         localStorage.setItem('displayName', resolvedName);
         localStorage.setItem('userEmail', resolvedEmail);
+        localStorage.setItem('city', resolvedCity);
         localStorage.setItem('profilePictureURL', resolvedPic);
 
         setStatus('');
@@ -163,6 +176,7 @@ export default function ProfilePage() {
     setName(readScopedValue('displayName', 'Your Name'));
     setDob(readScopedValue('dateOfBirth', ''));
     setInstitution(readScopedValue('institution', 'FAST NUCES'));
+    setCity(readScopedValue('city', 'Lahore'));
     setLinkA(readScopedValue('linkA', ''));
     setLinkB(readScopedValue('linkB', ''));
     setProfilePictureDataUrl(readScopedValue('profilePictureURL', ''));
@@ -175,9 +189,11 @@ export default function ProfilePage() {
     if (email) sessionStorage.setItem('userEmail', email);
     localStorage.setItem('displayName', name);
     if (email) localStorage.setItem('userEmail', email);
+    localStorage.setItem('city', city || '');
     writeScopedValue('displayName', name);
     writeScopedValue('dateOfBirth', dob || '');
     writeScopedValue('institution', institution || '');
+    writeScopedValue('city', city || '');
     writeScopedValue('linkA', linkA || '');
     writeScopedValue('linkB', linkB || '');
     writeScopedValue('profilePictureURL', profilePictureDataUrl || '');
@@ -193,12 +209,16 @@ export default function ProfilePage() {
       const lastName = rest.join(' ') || 'N/A';
       const res = await fetch(`${API_BASE_URL}/api/profile/${encodeURIComponent(userId)}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': String(userId),
+        },
         body: JSON.stringify({
           role: 'student',
           firstName: firstName || null,
           lastName,
           department: institution || null,
+          city: city || null,
           year: null,
           dateOfBirth: dob || null,
           linkedInURL: linkA || null,
@@ -276,6 +296,14 @@ export default function ProfilePage() {
 
               <FieldRow label="Department:" value={institution} editable>
                 <input disabled={!isEditing} className="rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5 w-full disabled:bg-slate-50 disabled:text-slate-500" value={institution} onChange={(e) => setInstitution(e.target.value)} />
+              </FieldRow>
+
+              <FieldRow label="City:" value={city} editable>
+                <select disabled={!isEditing} className="rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5 w-full disabled:bg-slate-50 disabled:text-slate-500" value={city} onChange={(e) => setCity(e.target.value)}>
+                  {ALLOWED_CITIES.map((cityOption) => (
+                    <option key={cityOption} value={cityOption}>{cityOption}</option>
+                  ))}
+                </select>
               </FieldRow>
 
               <div>

@@ -199,6 +199,7 @@ export default function ViewEventPage() {
   const seatsLeft = capacity > 0 ? Math.max(capacity - confirmed, 0) : null;
   const organizerName = eventData.Organizer || eventData.OrganizationName || "Organizer";
   const organizerEmail = eventData.OrganizerEmail || eventData.OrganizerAccountEmail || "Not shared";
+  const organizerCity = eventData.OrganizerCity || eventData.City || "Not specified";
   const organizerDescription = eventData.OrganizerDescription || "No organizer description available.";
   const organizerLogo = eventData.OrganizerLogo || DEFAULT_ORGANIZER_LOGO;
   const posterSrc = eventData.PosterURL || DEFAULT_EVENT_POSTER;
@@ -235,6 +236,7 @@ export default function ViewEventPage() {
             <p className="text-sm text-slate-700"><strong>Date:</strong> {formatDate(eventData.eventDate || eventData.EventDate)}</p>
             <p className="text-sm text-slate-700"><strong>Time:</strong> {formatTime(eventData.eventTime || eventData.EventTime || eventData.Time)}</p>
             <p className="text-sm text-slate-700"><strong>Venue:</strong> {eventData.venue || eventData.Venue || "TBA"}</p>
+            <p className="text-sm text-slate-700"><strong>City:</strong> {eventData.city || eventData.City || "Not specified"}</p>
             <p className="text-sm text-slate-700 mt-2">{eventData.description || eventData.Description || ""}</p>
           </div>
 
@@ -255,6 +257,7 @@ export default function ViewEventPage() {
                 <div>
                   <p className="text-sm text-slate-700"><strong>Name:</strong> {organizerName}</p>
                   <p className="text-sm text-slate-700"><strong>Email:</strong> {organizerEmail}</p>
+                  <p className="text-sm text-slate-700"><strong>City:</strong> {organizerCity}</p>
                   <p className="mt-2 text-sm text-slate-600">{organizerDescription}</p>
                 </div>
               </div>

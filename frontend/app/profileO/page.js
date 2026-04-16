@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const ALLOWED_CITIES = ['Lahore', 'Islamabad', 'Karachi'];
 
 export default function ProfileO() {
   const [currentUserId, setCurrentUserId] = useState("");
@@ -10,6 +11,7 @@ export default function ProfileO() {
   const [orgName, setOrgName] = useState("Organization Name");
   const [description, setDescription] = useState("Not set");
   const [contactEmail, setContactEmail] = useState("no-reply@organization.org");
+  const [city, setCity] = useState("Lahore");
   const [verification, setVerification] = useState("Pending");
   const [profilePictureDataUrl, setProfilePictureDataUrl] = useState("");
   const [events, setEvents] = useState([]);
@@ -72,6 +74,7 @@ export default function ProfileO() {
     setOrgName(readScopedValue("organizationName", "Organization Name"));
     setDescription(readScopedValue("organizationDescription", "Not set"));
     setContactEmail(readScopedValue("userEmail", "no-reply@organization.org"));
+    setCity(readScopedValue("city", "Lahore"));
     setProfilePictureDataUrl(readScopedValue("profilePictureURL", ""));
   };
 
@@ -94,12 +97,14 @@ export default function ProfileO() {
     const savedOrg = readInitial("organizationName", "Organization Name");
     const savedDesc = readInitial("organizationDescription", "Not set");
     const savedEmail = readInitial("userEmail", "no-reply@organization.org");
+    const savedCity = readInitial("city", "Lahore");
     const savedVer = readInitial("organizationVerificationStatus", "Pending");
     const savedPic = readInitial("profilePictureURL", "");
 
     if (savedOrg) setOrgName(savedOrg);
     if (savedDesc) setDescription(savedDesc);
     if (savedEmail) setContactEmail(savedEmail);
+    if (savedCity) setCity(savedCity);
     if (savedVer) setVerification(savedVer);
     if (savedPic) setProfilePictureDataUrl(savedPic);
 
@@ -123,18 +128,21 @@ export default function ProfileO() {
         const nextName = data.OrganizationName || savedOrg || "Organization Name";
         const nextDesc = data.Description || savedDesc || "Not set";
         const nextEmail = data.ContactEmail || data.Email || savedEmail || "no-reply@organization.org";
+        const nextCity = data.City || savedCity || "Lahore";
         const nextVer = data.VerificationStatus || savedVer || "Pending";
         const nextPic = data.ProfilePictureURL || savedPic || "";
 
         setOrgName(nextName);
         setDescription(nextDesc);
         setContactEmail(nextEmail);
+        setCity(nextCity);
         setVerification(nextVer);
         setProfilePictureDataUrl(nextPic);
 
         localStorage.setItem(`organizationName:${resolvedUserId}`, nextName);
         localStorage.setItem(`organizationDescription:${resolvedUserId}`, nextDesc);
         localStorage.setItem(`userEmail:${resolvedUserId}`, nextEmail);
+        localStorage.setItem(`city:${resolvedUserId}`, nextCity);
         localStorage.setItem(`organizationVerificationStatus:${resolvedUserId}`, nextVer);
         localStorage.setItem(`displayName:${resolvedUserId}`, nextName);
         localStorage.setItem(`profilePictureURL:${resolvedUserId}`, nextPic);
@@ -143,6 +151,7 @@ export default function ProfileO() {
         sessionStorage.setItem("userEmail", nextEmail);
         localStorage.setItem("organizationName", nextName);
         localStorage.setItem("userEmail", nextEmail);
+        localStorage.setItem("city", nextCity);
         localStorage.setItem("displayName", nextName);
         localStorage.setItem("profilePictureURL", nextPic);
         setStatus("");
@@ -326,6 +335,22 @@ export default function ProfileO() {
               </div>
 
               <div className="flex items-center gap-3">
+                <div className="w-44 text-sm font-medium text-slate-700">City</div>
+                <div className="flex-1">
+                  <select
+                    disabled={!isEditing}
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    className="rounded-xl border border-[var(--stroke)] px-3 py-2 w-full disabled:bg-slate-50 disabled:text-slate-500"
+                  >
+                    {ALLOWED_CITIES.map((cityOption) => (
+                      <option key={cityOption} value={cityOption}>{cityOption}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
                 <div className="w-44 text-sm font-medium text-slate-700">Verification</div>
                 <div className="flex-1">
                   <div className="text-sm text-slate-800">{verification}</div>
@@ -390,10 +415,12 @@ export default function ProfileO() {
                     sessionStorage.setItem("displayName", orgName);
                     sessionStorage.setItem("userEmail", contactEmail);
                     localStorage.setItem("userEmail", contactEmail);
+                    localStorage.setItem("city", city);
                     localStorage.setItem("displayName", orgName);
                     writeScopedValue("organizationName", orgName);
                     writeScopedValue("organizationDescription", description);
                     writeScopedValue("userEmail", contactEmail);
+                    writeScopedValue("city", city);
                     writeScopedValue("organizationVerificationStatus", verification);
                     writeScopedValue("displayName", orgName);
                     writeScopedValue("profilePictureURL", profilePictureDataUrl || "");
@@ -417,6 +444,7 @@ export default function ProfileO() {
                           organizationName: orgName,
                           description: description === "Not set" ? null : description,
                           contactEmail: contactEmail || null,
+                          city: city || null,
                           profilePictureURL: profilePictureDataUrl || null,
                         }),
                       });

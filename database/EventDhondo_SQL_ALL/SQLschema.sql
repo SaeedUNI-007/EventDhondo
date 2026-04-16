@@ -62,6 +62,7 @@ CREATE TABLE [StudentProfiles] (
     [FirstName] NVARCHAR(50) NOT NULL,
     [LastName] NVARCHAR(50) NOT NULL,
     [Department] NVARCHAR(100),
+    [City] NVARCHAR(100) CHECK ([City] IN ('Lahore', 'Islamabad', 'Karachi')),
     [YearOfStudy] INT,
     [DateOfBirth] DATE NULL,
     [ProfilePictureURL] NVARCHAR(MAX),
@@ -95,6 +96,7 @@ CREATE TABLE [OrganizerProfiles] (
     [OrganizationName] NVARCHAR(150) NOT NULL UNIQUE,
     [Description] NVARCHAR(MAX),
     [ContactEmail] NVARCHAR(100) NOT NULL,
+    [City] NVARCHAR(100) CHECK ([City] IN ('Lahore', 'Islamabad', 'Karachi')),
     [ProfilePictureURL] NVARCHAR(MAX),
     [VerificationStatus] NVARCHAR(10) NOT NULL DEFAULT 'Pending' CHECK ([VerificationStatus] IN ('Pending', 'Verified', 'Rejected')),
     FOREIGN KEY ([UserID]) REFERENCES [Users]([UserID]) ON DELETE CASCADE
@@ -137,6 +139,7 @@ CREATE TABLE [Events] (
     [EventDate] DATE NOT NULL,
     [EventTime] TIME NOT NULL,
     [Venue] NVARCHAR(150),
+    [City] NVARCHAR(100) NOT NULL CHECK ([City] IN ('Lahore', 'Islamabad', 'Karachi')),
     [Capacity] INT NOT NULL,
     [RegistrationDeadline] DATETIMEOFFSET NOT NULL,
     [Status] NVARCHAR(20) NOT NULL DEFAULT 'Draft' CHECK ([Status] IN ('Draft', 'Published', 'Registration Closed', 'Ongoing', 'Completed', 'Cancelled')),

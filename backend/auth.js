@@ -5,6 +5,13 @@ const router = express.Router();
 const { sql, poolPromise } = require('./db');
 const bcrypt = require('bcrypt');
 
+const ALLOWED_CITIES = ['Lahore', 'Islamabad', 'Karachi'];
+const normalizeAllowedCity = (value) => {
+    const raw = String(value || '').trim().toLowerCase();
+    const match = ALLOWED_CITIES.find((city) => city.toLowerCase() === raw);
+    return match || null;
+};
+
 // Helper function to validate the university domain
 const isUniversityEmail = (email) => {
     return email && email.toLowerCase().endsWith('@fast.edu.pk');
@@ -38,6 +45,7 @@ router.post('/register', async (req, res) => {
     const studentFirstName = String(firstNameRaw || studentProfile?.firstName || nameParts[0] || '').trim();
     const studentLastName = String(lastNameRaw || studentProfile?.lastName || nameParts.slice(1).join(' ') || 'N/A').trim();
     const studentDepartment = String(departmentId || department || studentProfile?.department || '').trim() || null;
+    const studentCity = normalizeAllowedCity(studentProfile?.city);
     const parsedYear = Number(yearOfStudy ?? year ?? studentProfile?.yearOfStudy);
     const studentDateOfBirthRaw = studentProfile?.dateOfBirth || null;
     const studentDateOfBirth = studentDateOfBirthRaw ? new Date(studentDateOfBirthRaw) : null;
@@ -46,6 +54,7 @@ router.post('/register', async (req, res) => {
     const orgName = String(organizerProfile?.organizationName || '').trim();
     const orgDescription = String(organizerProfile?.description || '').trim() || null;
     const orgContactEmail = String(organizerProfile?.contactEmail || '').trim();
+    const orgCity = normalizeAllowedCity(organizerProfile?.city);
     const orgProfilePicture = organizerProfile?.profilePictureURL || null;
 
     if (!normalizedEmail || !password) {
@@ -76,10 +85,22 @@ router.post('/register', async (req, res) => {
                 message: 'dateOfBirth is not a valid date',
             });
         }
+
+        if (!studentCity) {
+            return res.status(400).json({
+                success: false,
+                message: `city must be one of: ${ALLOWED_CITIES.join(', ')}`,
+            });
+        }
     } else if (!orgName || !orgContactEmail) {
         return res.status(400).json({
             success: false,
             message: 'organizationName and contactEmail are required for organizer registration',
+        });
+    } else if (!orgCity) {
+        return res.status(400).json({
+            success: false,
+            message: `city must be one of: ${ALLOWED_CITIES.join(', ')}`,
         });
     }
 
@@ -127,10 +148,11 @@ router.post('/register', async (req, res) => {
                     .input('OrganizationName', sql.NVarChar(150), orgName)
                     .input('Description', sql.NVarChar(sql.MAX), orgDescription)
                     .input('ContactEmail', sql.NVarChar(100), orgContactEmail)
+                    .input('City', sql.NVarChar(100), orgCity)
                     .input('ProfilePictureURL', sql.NVarChar(sql.MAX), orgProfilePicture)
                     .query(`
-                        INSERT INTO OrganizerProfiles (UserID, OrganizationName, Description, ContactEmail, ProfilePictureURL, VerificationStatus)
-                        VALUES (@UserID, @OrganizationName, @Description, @ContactEmail, @ProfilePictureURL, 'Pending')
+                        INSERT INTO OrganizerProfiles (UserID, OrganizationName, Description, ContactEmail, City, ProfilePictureURL, VerificationStatus)
+                        VALUES (@UserID, @OrganizationName, @Description, @ContactEmail, @City, @ProfilePictureURL, 'Pending')
                     `);
 } else {
     // UPDATED: Include LinkedInURL and GitHubURL
@@ -142,14 +164,15 @@ router.post('/register', async (req, res) => {
         .input('FirstName', sql.NVarChar(50), studentFirstName)
         .input('LastName', sql.NVarChar(50), studentLastName)
         .input('Department', sql.NVarChar(100), studentDepartment)
+        .input('City', sql.NVarChar(100), studentCity)
         .input('YearOfStudy', sql.Int, parsedYear)
         .input('DateOfBirth', sql.Date, studentDateOfBirthRaw ? studentDateOfBirth : null)
         .input('ProfilePictureURL', sql.NVarChar(sql.MAX), studentProfilePicture)
         .input('LinkedIn', sql.NVarChar(255), linkedIn)
         .input('GitHub', sql.NVarChar(255), gitHub)
         .query(`
-            INSERT INTO StudentProfiles (UserID, FirstName, LastName, Department, YearOfStudy, DateOfBirth, ProfilePictureURL, LinkedInURL, GitHubURL)
-            VALUES (@UserID, @FirstName, @LastName, @Department, @YearOfStudy, @DateOfBirth, @ProfilePictureURL, @LinkedIn, @GitHub)
+            INSERT INTO StudentProfiles (UserID, FirstName, LastName, Department, City, YearOfStudy, DateOfBirth, ProfilePictureURL, LinkedInURL, GitHubURL)
+            VALUES (@UserID, @FirstName, @LastName, @Department, @City, @YearOfStudy, @DateOfBirth, @ProfilePictureURL, @LinkedIn, @GitHub)
         `);
 }
             if (Array.isArray(interests) && interests.length > 0) {

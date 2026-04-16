@@ -7,6 +7,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 const EVENT_TYPES = ["Competition", "Workshop", "Seminar", "Cultural", "Sports"];
 const EVENT_STATUSES = ["Draft", "Published", "Cancelled"];
+const ALLOWED_CITIES = ['Lahore', 'Islamabad', 'Karachi'];
 
 function toDateInputValue(value) {
   if (!value) return "";
@@ -63,6 +64,7 @@ export default function EditEventPage() {
     eventDate: "",
     eventTime: "",
     venue: "",
+    city: "Lahore",
     capacity: "",
     registrationDeadline: "",
     posterURL: "",
@@ -108,6 +110,7 @@ export default function EditEventPage() {
           eventDate: formattedDate,
           eventTime: formattedTime,
           venue: data.Venue || data.venue || "",
+          city: data.City || data.city || 'Lahore',
           capacity: String(data.Capacity || data.capacity || ""),
           registrationDeadline: formattedDeadline,
           posterURL: data.PosterURL || data.posterURL || "",
@@ -158,6 +161,7 @@ export default function EditEventPage() {
           eventDate: form.eventDate,
           eventTime: form.eventTime,
           venue: form.venue,
+          city: form.city,
           capacity: Number(form.capacity),
           registrationDeadline: form.registrationDeadline,
           posterURL: form.posterURL || null,
@@ -260,6 +264,15 @@ export default function EditEventPage() {
             <div>
               <label className="block text-sm font-semibold text-slate-700">Venue</label>
               <input name="venue" value={form.venue} onChange={onChange} className="mt-1 w-full rounded-lg border border-[var(--stroke)] bg-white px-3 py-2" />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-700">City *</label>
+              <select name="city" value={form.city} onChange={onChange} className="mt-1 w-full rounded-lg border border-[var(--stroke)] bg-white px-3 py-2" required>
+                {ALLOWED_CITIES.map((cityOption) => (
+                  <option key={cityOption} value={cityOption}>{cityOption}</option>
+                ))}
+              </select>
             </div>
 
             <div className="grid grid-cols-2 gap-3">

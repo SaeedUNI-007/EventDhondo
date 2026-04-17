@@ -404,12 +404,12 @@ GO
 
 -- [FEEDBACK] Submit Review (Only if Attended)
 CREATE PROCEDURE sp_AddReview
-    @EventID INT, @UserID INT, @Rating INT, @Text NVARCHAR(MAX)
+    @EventID INT, @UserID INT, @Rating INT, @ValueForTimeRating INT = NULL, @Text NVARCHAR(MAX)
 AS
 BEGIN
     DECLARE @AttID INT = (SELECT a.AttendanceID FROM Attendance a JOIN Registrations r ON a.RegistrationID = r.RegistrationID WHERE r.EventID = @EventID AND r.UserID = @UserID);
     IF @AttID IS NULL THROW 50003, 'Must attend event to review', 1;
-    INSERT INTO EventReviews (EventID, UserID, AttendanceID, OverallRating, ReviewText) VALUES (@EventID, @UserID, @AttID, @Rating, @Text);
+    INSERT INTO EventReviews (EventID, UserID, AttendanceID, OverallRating, ValueForTimeRating, ReviewText) VALUES (@EventID, @UserID, @AttID, @Rating, @ValueForTimeRating, @Text);
 END;
 GO
 
@@ -595,6 +595,7 @@ BEGIN
         v.AvgOrganizationRating,
         v.AvgContentRating,
         v.AvgVenueRating,
+        v.AvgValueForTimeRating,
         v.ReputationScore,
         CASE
             WHEN v.ReputationScore >= 4.5 THEN 'Platinum'

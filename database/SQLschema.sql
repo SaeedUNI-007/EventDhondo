@@ -351,6 +351,7 @@ CREATE TABLE [EventReviews] (
     [OrganizationQualityRating] INT,
     [ContentQualityRating] INT,
     [VenueRating] INT,
+    [ValueForTimeRating] INT,
     [ReviewText] NVARCHAR(MAX),
     [CreatedAt] DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
     UNIQUE ([EventID], [UserID]),
@@ -360,7 +361,8 @@ CREATE TABLE [EventReviews] (
     CONSTRAINT CK_Reviews_OverallRating CHECK ([OverallRating] BETWEEN 1 AND 5),
     CONSTRAINT CK_Reviews_OrganizationQualityRating CHECK ([OrganizationQualityRating] IS NULL OR [OrganizationQualityRating] BETWEEN 1 AND 5),
     CONSTRAINT CK_Reviews_ContentQualityRating CHECK ([ContentQualityRating] IS NULL OR [ContentQualityRating] BETWEEN 1 AND 5),
-    CONSTRAINT CK_Reviews_VenueRating CHECK ([VenueRating] IS NULL OR [VenueRating] BETWEEN 1 AND 5)
+    CONSTRAINT CK_Reviews_VenueRating CHECK ([VenueRating] IS NULL OR [VenueRating] BETWEEN 1 AND 5),
+    CONSTRAINT CK_Reviews_ValueForTimeRating CHECK ([ValueForTimeRating] IS NULL OR [ValueForTimeRating] BETWEEN 1 AND 5)
 );
 
 CREATE TABLE [ReviewResponses] (

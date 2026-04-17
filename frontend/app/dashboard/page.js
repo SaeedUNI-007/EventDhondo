@@ -246,7 +246,7 @@ export default function DashboardStudent() {
 
   return (
     <main className="min-h-screen px-0 py-8">
-      <div className="shell mx-auto max-w-[1200px]">
+      <div className="shell mx-auto max-w-[1600px]">
         <header className="glass reveal-up rounded-2xl p-5 md:p-7 mb-4 lg:ml-80">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div className="min-w-0">
@@ -277,19 +277,20 @@ export default function DashboardStudent() {
           </div>
         </header>
 
-        <div className="mx-auto max-w-[1200px] lg:ml-80 px-4 mb-4">
-          <div className="glass rounded-2xl p-4 md:p-5">
-            {/* Filter card centered — matches organizer layout, left helper line removed */}
-            <div className="flex justify-center">
-              <div className="w-full max-w-[980px]">
-                <div className="rounded-lg bg-white p-3 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm font-semibold">Filter events</span>
+        <div className="mx-auto max-w-[2000px] lg:ml-80 px-4 mb-4">
+          {/* Single filter box */}
+          <div className="flex justify-center">
+            <div className="w-full max-w-[1300px] rounded-2xl bg-white p-4 shadow-sm">
+              <div className="flex flex-col gap-3">
+                <div className="flex justify-center">
+                  <span className="text-sm font-semibold text-center">Filter events</span>
+                </div>
 
+                <div className="flex flex-row flex-nowrap items-center justify-center gap-2 min-w-0 w-full overflow-hidden">
                     <select
                       value={selectedType}
                       onChange={e => setSelectedType(e.target.value)}
-                      className="p-2 rounded border bg-white text-sm"
+                      className="p-2 rounded border bg-white text-sm w-[115px] shrink-0"
                     >
                       <option value="all">All types</option>
                       {['Competition','Workshop','Seminar','Cultural','Sports']
@@ -300,7 +301,7 @@ export default function DashboardStudent() {
                     <select
                       value={dateOrder}
                       onChange={e => setDateOrder(e.target.value)}
-                      className="p-2 rounded border bg-white text-sm"
+                      className="p-2 rounded border bg-white text-sm w-[150px] shrink-0"
                     >
                       <option value="asc">Date: Oldest first</option>
                       <option value="desc">Date: Newest first</option>
@@ -309,24 +310,22 @@ export default function DashboardStudent() {
                     <select
                       value={selectedCity}
                       onChange={e => setSelectedCity(e.target.value)}
-                      className="p-2 rounded border bg-white text-sm"
+                      className="p-2 rounded border bg-white text-sm w-[115px] shrink-0"
                     >
                       <option value="all">All cities</option>
                       {cityOptions.map((c) => <option key={c} value={c}>{c}</option>)}
                     </select>
-                  </div>
 
-                  <div className="flex items-center gap-3">
                     <input
                       placeholder="Search title or description"
                       value={searchTerm}
                       onChange={e => setSearchTerm(e.target.value)}
-                      className="p-2 rounded border text-sm w-56"
+                      className="p-2 rounded border text-sm flex-1 min-w-0"
                     />
                     <button
                       type="button"
                       onClick={() => { setSelectedType('all'); setSelectedCity('all'); setDateOrder('asc'); setSearchTerm(''); }}
-                      className="px-3 py-2 rounded border text-sm text-slate-700 hover:bg-[var(--surface-soft)]"
+                      className="px-2.5 py-2 rounded border text-sm text-slate-700 hover:bg-[var(--surface-soft)] whitespace-nowrap shrink-0"
                     >
                       Reset
                     </button>
@@ -334,7 +333,6 @@ export default function DashboardStudent() {
                 </div>
               </div>
             </div>
-          </div>
         </div>
 
         <div className="hidden lg:block">

@@ -294,6 +294,7 @@ export default function ViewEventOrg() {
             <div className="flex gap-2 mb-3">
               <Link href={`/event/edit/${eventId}?returnTo=${encodeURIComponent(safeReturnTo)}`} className="rounded-lg border border-[var(--stroke)] bg-white px-3 py-2 text-sm font-semibold">Edit</Link>
               <Link href={`/attendanceO?eventId=${encodeURIComponent(eventId)}`} className="rounded-lg border border-[var(--stroke)] bg-white px-3 py-2 text-sm font-semibold">Attendance</Link>
+              <Link href={`/event/reviews?eventId=${encodeURIComponent(eventId)}&organizerId=${encodeURIComponent(eventData.OrganizerID || userId || "")}&returnTo=${encodeURIComponent(`/viewEventO?eventId=${eventId}&returnTo=${encodeURIComponent(safeReturnTo)}`)}`} className="rounded-lg border border-[var(--stroke)] bg-white px-3 py-2 text-sm font-semibold">Reviews</Link>
               {(eventData.Status || eventData.status || "").toLowerCase() === "cancelled" ? (
                 <button onClick={handleRestoreEvent} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white">Restore Event</button>
               ) : (

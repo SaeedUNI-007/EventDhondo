@@ -85,12 +85,14 @@ SELECT
     CAST(AVG(CAST(er.OrganizationQualityRating AS FLOAT)) AS DECIMAL(5,2)) AS AvgOrganizationRating,
     CAST(AVG(CAST(er.ContentQualityRating AS FLOAT)) AS DECIMAL(5,2)) AS AvgContentRating,
     CAST(AVG(CAST(er.VenueRating AS FLOAT)) AS DECIMAL(5,2)) AS AvgVenueRating,
+    CAST(AVG(CAST(er.ValueForTimeRating AS FLOAT)) AS DECIMAL(5,2)) AS AvgValueForTimeRating,
     CAST(
         (
             ISNULL(AVG(CAST(er.OverallRating AS FLOAT)), 0) * 0.40
             + ISNULL(AVG(CAST(er.OrganizationQualityRating AS FLOAT)), 0) * 0.20
-            + ISNULL(AVG(CAST(er.ContentQualityRating AS FLOAT)), 0) * 0.25
-            + ISNULL(AVG(CAST(er.VenueRating AS FLOAT)), 0) * 0.15
+            + ISNULL(AVG(CAST(er.ContentQualityRating AS FLOAT)), 0) * 0.20
+            + ISNULL(AVG(CAST(er.VenueRating AS FLOAT)), 0) * 0.10
+            + ISNULL(AVG(CAST(er.ValueForTimeRating AS FLOAT)), 0) * 0.10
         )
         AS DECIMAL(5,2)
     ) AS ReputationScore

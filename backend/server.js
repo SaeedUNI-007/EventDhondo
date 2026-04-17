@@ -111,6 +111,7 @@ const dataRoutes  = require('./data');
 const teamRoutes  = require('./team');
 const adminRoutes = require('./routes/admin');
 const notificationsRouter = require('./routes/notifications');
+const reviewsRouter = require('./routes/reviews');
 
 // ─── Middleware ────────────────────────────────────────────────────────────
 const { authMiddleware } = require('./middleware/auth');
@@ -135,6 +136,7 @@ console.log(`🔒 CORS origins: ${allowedOrigins.join(', ')}`);
 // ─── Register routes ───────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/notifications', notificationsRouter);
+app.use('/api/reviews', reviewsRouter);
 app.use('/api', dataRoutes);
 app.use('/api/teams', authMiddleware, teamRoutes);
 app.use('/api/admin', adminRoutes);

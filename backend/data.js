@@ -1548,6 +1548,110 @@ const normalizeAllowedCity = (value) => {
     return match || null;
 };
 
+const extractDateParts = (value) => {
+    if (!value) return null;
+
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return {
+            year: value.getUTCFullYear(),
+            month: value.getUTCMonth() + 1,
+            day: value.getUTCDate(),
+        };
+    }
+
+    const raw = String(value).trim();
+    const ymd = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (ymd) {
+        return {
+            year: Number(ymd[1]),
+            month: Number(ymd[2]),
+            day: Number(ymd[3]),
+        };
+    }
+
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return {
+        year: parsed.getUTCFullYear(),
+        month: parsed.getUTCMonth() + 1,
+        day: parsed.getUTCDate(),
+    };
+};
+
+const extractTimeParts = (value) => {
+    if (!value) return { hour: 0, minute: 0, second: 0 };
+
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return {
+            hour: value.getUTCHours(),
+            minute: value.getUTCMinutes(),
+            second: value.getUTCSeconds(),
+        };
+    }
+
+    const raw = String(value).trim();
+    const hhmm = raw.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?$/);
+    if (hhmm) {
+        return {
+            hour: Number(hhmm[1]),
+            minute: Number(hhmm[2]),
+            second: Number(hhmm[3] || 0),
+        };
+    }
+
+    const iso = raw.match(/T(\d{2}):(\d{2})(?::(\d{2}))?/);
+    if (iso) {
+        return {
+            hour: Number(iso[1]),
+            minute: Number(iso[2]),
+            second: Number(iso[3] || 0),
+        };
+    }
+
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return { hour: 0, minute: 0, second: 0 };
+    return {
+        hour: parsed.getUTCHours(),
+        minute: parsed.getUTCMinutes(),
+        second: parsed.getUTCSeconds(),
+    };
+};
+
+const getEventStartTimestamp = (eventDate, eventTime) => {
+    const dateParts = extractDateParts(eventDate);
+    if (!dateParts) return null;
+    const timeParts = extractTimeParts(eventTime);
+    return new Date(
+        dateParts.year,
+        dateParts.month - 1,
+        dateParts.day,
+        timeParts.hour,
+        timeParts.minute,
+        timeParts.second,
+        0
+    ).getTime();
+};
+
+const isRegistrationClosedForEvent = (eventRow) => {
+    const now = Date.now();
+
+    const deadlineMs = eventRow?.RegistrationDeadline
+        ? new Date(eventRow.RegistrationDeadline).getTime()
+        : null;
+    const startMs = getEventStartTimestamp(eventRow?.EventDate, eventRow?.EventTime);
+
+    const closedByDeadline = Number.isFinite(deadlineMs) && now >= deadlineMs;
+    const started = Number.isFinite(startMs) && now >= startMs;
+
+    return {
+        closed: closedByDeadline || started,
+        closedByDeadline,
+        started,
+        deadlineMs,
+        startMs,
+    };
+};
+
 // ─── QR Token helpers ──────────────────────────────────────────────────────
 
 const buildStudentQrToken = (userId) => {
@@ -2237,6 +2341,32 @@ router.post('/events/register', authMiddleware, async (req, res) => {
 
     try {
         const pool = await poolPromise;
+
+        const eventResult = await pool.request()
+            .input('EventID', sql.Int, Number(eventId))
+            .query(`
+                SELECT TOP 1 EventID, Status, EventDate, EventTime, RegistrationDeadline
+                FROM [dbo].[Events]
+                WHERE EventID = @EventID
+            `);
+
+        const eventRow = eventResult.recordset?.[0];
+        if (!eventRow) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+
+        if (String(eventRow.Status || '').toLowerCase() === 'cancelled') {
+            return res.status(400).json({ success: false, message: 'Registration is closed because this event is cancelled.' });
+        }
+
+        const registrationWindow = isRegistrationClosedForEvent(eventRow);
+        if (registrationWindow.closed) {
+            const cutoffMessage = registrationWindow.closedByDeadline
+                ? 'Registration deadline has passed.'
+                : 'Registration is closed because the event has started.';
+            return res.status(400).json({ success: false, message: cutoffMessage });
+        }
+
         const result = await pool.request()
             .input('UserID', sql.Int, userId)
             .input('EventID', sql.Int, Number(eventId))
@@ -2271,6 +2401,19 @@ router.post('/events/unregister', authMiddleware, async (req, res) => {
 
     try {
         const pool = await poolPromise;
+
+        const eventResult = await pool.request()
+            .input('EventID', sql.Int, Number(eventId))
+            .query(`
+                SELECT TOP 1 EventID, EventDate, EventTime, RegistrationDeadline
+                FROM [dbo].[Events]
+                WHERE EventID = @EventID
+            `);
+        const eventRow = eventResult.recordset?.[0];
+        if (!eventRow) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+
         const result = await pool.request()
             .input('UserID', sql.Int, userId)
             .input('EventID', sql.Int, Number(eventId))
@@ -2280,24 +2423,28 @@ router.post('/events/unregister', authMiddleware, async (req, res) => {
         if (String(message).toLowerCase().startsWith('error'))
             return res.status(400).json({ success: false, message });
 
-        // Auto-promote next waitlisted student.
-        const waitlistPromotion = await pool.request()
-            .input('EventID', sql.Int, Number(eventId))
-            .query(`
-                DECLARE @MaxCap INT, @CurrentCount INT, @NextWaitlistID INT, @NextUserID INT;
-                SELECT @MaxCap = Capacity FROM [dbo].[Events] WHERE EventID = @EventID;
-                SELECT @CurrentCount = COUNT(*) FROM [dbo].[Registrations] WHERE EventID = @EventID AND Status = 'Confirmed';
-                IF @MaxCap IS NULL OR @CurrentCount >= @MaxCap BEGIN SELECT CAST(0 AS BIT) AS Promoted, CAST(NULL AS INT) AS PromotedUserID; RETURN; END
-                SELECT TOP 1 @NextWaitlistID = WaitlistID, @NextUserID = UserID FROM [dbo].[RegistrationWaitlist] WHERE EventID = @EventID ORDER BY RequestedAt ASC, WaitlistID ASC;
-                IF @NextWaitlistID IS NULL BEGIN SELECT CAST(0 AS BIT) AS Promoted, CAST(NULL AS INT) AS PromotedUserID; RETURN; END
-                IF EXISTS (SELECT 1 FROM [dbo].[Registrations] WHERE EventID = @EventID AND UserID = @NextUserID AND Status = 'Cancelled')
-                    UPDATE [dbo].[Registrations] SET Status = 'Confirmed', CancelledAt = NULL, RegistrationDate = SYSDATETIMEOFFSET(), QRCode = CAST(NEWID() AS NVARCHAR(100)) WHERE EventID = @EventID AND UserID = @NextUserID AND Status = 'Cancelled';
-                ELSE IF NOT EXISTS (SELECT 1 FROM [dbo].[Registrations] WHERE EventID = @EventID AND UserID = @NextUserID AND Status <> 'Cancelled')
-                    INSERT INTO [dbo].[Registrations] (EventID, UserID, Status, QRCode) VALUES (@EventID, @NextUserID, 'Confirmed', CAST(NEWID() AS NVARCHAR(100)));
-                DELETE FROM [dbo].[RegistrationWaitlist] WHERE WaitlistID = @NextWaitlistID;
-                EXEC [dbo].[sp_AddNotification] @UserID = @NextUserID, @Title = 'Waitlist Update', @Message = 'A seat became available. You have been moved from waitlist to confirmed registration.', @EventID = @EventID;
-                SELECT CAST(1 AS BIT) AS Promoted, @NextUserID AS PromotedUserID;
-            `);
+        const registrationWindow = isRegistrationClosedForEvent(eventRow);
+
+        // Auto-promote next waitlisted student only while registration is open.
+        const waitlistPromotion = registrationWindow.closed
+            ? { recordset: [{ Promoted: false, PromotedUserID: null }] }
+            : await pool.request()
+                .input('EventID', sql.Int, Number(eventId))
+                .query(`
+                    DECLARE @MaxCap INT, @CurrentCount INT, @NextWaitlistID INT, @NextUserID INT;
+                    SELECT @MaxCap = Capacity FROM [dbo].[Events] WHERE EventID = @EventID;
+                    SELECT @CurrentCount = COUNT(*) FROM [dbo].[Registrations] WHERE EventID = @EventID AND Status = 'Confirmed';
+                    IF @MaxCap IS NULL OR @CurrentCount >= @MaxCap BEGIN SELECT CAST(0 AS BIT) AS Promoted, CAST(NULL AS INT) AS PromotedUserID; RETURN; END
+                    SELECT TOP 1 @NextWaitlistID = WaitlistID, @NextUserID = UserID FROM [dbo].[RegistrationWaitlist] WHERE EventID = @EventID ORDER BY RequestedAt ASC, WaitlistID ASC;
+                    IF @NextWaitlistID IS NULL BEGIN SELECT CAST(0 AS BIT) AS Promoted, CAST(NULL AS INT) AS PromotedUserID; RETURN; END
+                    IF EXISTS (SELECT 1 FROM [dbo].[Registrations] WHERE EventID = @EventID AND UserID = @NextUserID AND Status = 'Cancelled')
+                        UPDATE [dbo].[Registrations] SET Status = 'Confirmed', CancelledAt = NULL, RegistrationDate = SYSDATETIMEOFFSET(), QRCode = CAST(NEWID() AS NVARCHAR(100)) WHERE EventID = @EventID AND UserID = @NextUserID AND Status = 'Cancelled';
+                    ELSE IF NOT EXISTS (SELECT 1 FROM [dbo].[Registrations] WHERE EventID = @EventID AND UserID = @NextUserID AND Status <> 'Cancelled')
+                        INSERT INTO [dbo].[Registrations] (EventID, UserID, Status, QRCode) VALUES (@EventID, @NextUserID, 'Confirmed', CAST(NEWID() AS NVARCHAR(100)));
+                    DELETE FROM [dbo].[RegistrationWaitlist] WHERE WaitlistID = @NextWaitlistID;
+                    EXEC [dbo].[sp_AddNotification] @UserID = @NextUserID, @Title = 'Waitlist Update', @Message = 'A seat became available. You have been moved from waitlist to confirmed registration.', @EventID = @EventID;
+                    SELECT CAST(1 AS BIT) AS Promoted, @NextUserID AS PromotedUserID;
+                `);
 
         const promotedUserId = Number(waitlistPromotion.recordset?.[0]?.PromotedUserID || 0);
         if (Number.isInteger(promotedUserId) && promotedUserId > 0) {
@@ -2315,7 +2462,11 @@ router.post('/events/unregister', authMiddleware, async (req, res) => {
         const promoted = Boolean(waitlistPromotion.recordset?.[0]?.Promoted);
         return res.json({
             success: true,
-            message: promoted ? `${message} Next waitlisted student has been auto-registered.` : message,
+            message: promoted
+                ? `${message} Next waitlisted student has been auto-registered.`
+                : (registrationWindow.closed
+                    ? `${message} Registration window is closed, so no waitlist promotion was performed.`
+                    : message),
             waitlistPromoted: promoted,
             promotedUserId: waitlistPromotion.recordset?.[0]?.PromotedUserID || null,
         });

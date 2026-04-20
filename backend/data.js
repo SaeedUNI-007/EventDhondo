@@ -1296,84 +1296,77 @@ router.get('/achievements/:userId', authMiddleware, async (req, res) => {
 });
 
 // ─── Route: GET /recommendations ─────────────────────────────────────────
-router.get('/recommendations', authMiddleware, async (req, res) => {
-    try {
-        const pool = await poolPromise;
-        const result = await pool.request()
-            .input('UserID', sql.Int, req.user.UserID)
-            .execute('dbo.sp_GetRecommendedEvents');
-
-        return res.json(result.recordset);
-    } catch (err) {
-        return res.status(500).json({ success: false, message: err.message || 'Failed to fetch recommendations' });
-    }
-});
-
-// ─── Route: GET /profile/:userId/portfolio-summary ───────────────────────
-router.get('/profile/:userId/portfolio-summary', authMiddleware, async (req, res) => {
-    const targetUserId = Number(req.params.userId);
-    const requesterId = Number(req.user?.UserID);
-    const requesterRole = String(req.user?.Role || '').toLowerCase();
-
-    if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
-        return res.status(400).json({ success: false, message: 'Valid userId is required' });
+router.get('/recommendations', async (req, res) => {
+  try {
+    // resolve user id: prefer authenticated user attached by authMiddleware, fall back to header/query
+    const authUserId = req.user?.UserID;
+    const userId = Number(authUserId || req.query.userId || req.headers['x-user-id'] || 0);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return res.status(400).json({ success: false, message: 'userId required (query or x-user-id header) or attach auth middleware' });
     }
 
-    if (requesterRole !== 'admin' && requesterId !== targetUserId) {
-        return res.status(403).json({ success: false, message: 'You can only view your own portfolio summary' });
+    const limit = Math.min(Math.max(Number(req.query.limit || 10), 1), 50);
+    const pool = await poolPromise;
+
+    // fetch user interests
+    const interestRows = await pool.request()
+      .input('UserID', sql.Int, userId)
+      .query(`
+        SELECT i.InterestName
+        FROM UserInterests ui
+        JOIN Interests i ON i.InterestID = ui.InterestID
+        WHERE ui.UserID = @UserID
+      `);
+
+    const interests = (interestRows.recordset || []).map(r => String(r.InterestName || '').trim()).filter(Boolean);
+    if (interests.length === 0) {
+      // fallback: return popular upcoming events when no interests
+      const popular = await pool.request()
+        .input('Limit', sql.Int, limit)
+        .query(`
+          SELECT TOP (@Limit)
+            e.EventID, e.Title, e.Description, e.EventType, e.EventDate, e.EventTime, e.Venue, e.City, e.PosterURL, op.OrganizationName AS Organizer
+          FROM Events e
+          LEFT JOIN OrganizerProfiles op ON op.UserID = e.OrganizerID
+          WHERE e.Status = 'Published' AND (e.EventDate IS NULL OR e.EventDate >= CONVERT(date, GETDATE()))
+          ORDER BY e.EventDate ASC, e.EventTime ASC
+        `);
+      return res.json({ success: true, items: popular.recordset || [] });
     }
 
-    try {
-        const pool = await poolPromise;
-        const result = await pool.request()
-            .input('UserID', sql.Int, targetUserId)
-            .query(`
-                SELECT
-                    (SELECT COUNT(*)
-                     FROM [dbo].[Attendance] a
-                     JOIN [dbo].[Registrations] r ON a.RegistrationID = r.RegistrationID
-                     WHERE r.UserID = @UserID) AS totalEvents,
-                    (SELECT COUNT(*)
-                     FROM [dbo].[StudentAchievements]
-                     WHERE UserID = @UserID) AS totalWins
-            `);
+    // build WHERE clauses using parameterized LIKEs
+    const likeClauses = [];
+    const request = pool.request();
+    interests.forEach((term, i) => {
+      const p = `%${term.replace(/[%_]/g, '\\$&')}%`;
+      // add three checks per interest: EventType, Title, Description (and Tags if column exists)
+      request.input(`q${i}_type`, sql.NVarChar(200), term);
+      request.input(`q${i}_like`, sql.NVarChar(4000), p);
+      likeClauses.push(`LOWER(ISNULL(e.EventType,'')) = LOWER(@q${i}_type)`);
+      likeClauses.push(`LOWER(e.Title) LIKE LOWER(@q${i}_like) ESCAPE '\\'`);
+      likeClauses.push(`LOWER(ISNULL(e.Description,'')) LIKE LOWER(@q${i}_like) ESCAPE '\\'`);
+    });
 
-        return res.json(result.recordset?.[0] || { totalEvents: 0, totalWins: 0 });
-    } catch (err) {
-        return res.status(500).json({ success: false, message: err.message || 'Failed to fetch portfolio summary' });
-    }
-});
+    const whereMatch = likeClauses.length ? `(${likeClauses.join(' OR ')})` : '1=0';
 
-// ─── Route: GET /profile/:id/portfolio ───────────────────────────────────
-router.get('/profile/:id/portfolio', authMiddleware, async (req, res) => {
-    const targetUserId = Number(req.params.id);
-    const requesterId = Number(req.user?.UserID);
-    const requesterRole = String(req.user?.Role || '').toLowerCase();
+    const sqlText = `
+      SELECT TOP (@Limit)
+        DISTINCT e.EventID, e.Title, e.Description, e.EventType, e.EventDate, e.EventTime, e.Venue, e.City, e.PosterURL, op.OrganizationName AS Organizer
+      FROM Events e
+      LEFT JOIN OrganizerProfiles op ON op.UserID = e.OrganizerID
+      WHERE e.Status = 'Published'
+        AND (e.EventDate IS NULL OR e.EventDate >= CONVERT(date, GETDATE()))
+        AND ${whereMatch}
+      ORDER BY e.EventDate ASC, e.EventTime ASC
+    `;
 
-    if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
-        return res.status(400).json({ success: false, message: 'Valid userId is required' });
-    }
-
-    if (requesterRole !== 'admin' && requesterId !== targetUserId) {
-        return res.status(403).json({ success: false, message: 'You can only view your own portfolio' });
-    }
-
-    try {
-        const pool = await poolPromise;
-        const result = await pool.request()
-            .input('UserID', sql.Int, targetUserId)
-            .query(`
-                SELECT sa.*, e.Title AS EventName
-                FROM [dbo].[StudentAchievements] sa
-                JOIN [dbo].[Events] e ON sa.EventID = e.EventID
-                WHERE sa.UserID = @UserID
-                ORDER BY sa.AchievementDate DESC, sa.AchievementID DESC
-            `);
-
-        return res.json(result.recordset);
-    } catch (err) {
-        return res.status(500).json({ success: false, message: err.message || 'Failed to fetch portfolio' });
-    }
+    request.input('Limit', sql.Int, limit);
+    const result = await request.query(sqlText);
+    return res.json({ success: true, items: result.recordset || [] });
+  } catch (err) {
+    console.error('Recommendations Error:', err);
+    return res.status(500).json({ success: false, message: err.message || 'Failed to fetch recommendations' });
+  }
 });
 
 module.exports = router;

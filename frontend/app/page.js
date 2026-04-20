@@ -15,7 +15,7 @@ export default function Home() {
   const previewLabel = userRole ? 'Preview Your Dashboard' : 'Preview Dashboard';
 
   return (
-    <main className="min-h-screen">
+    <main className="min-h-screen relative overflow-hidden">
       <div className="shell">
         <nav className="glass reveal-up flex items-center justify-between rounded-2xl px-4 py-3 md:px-6 md:py-4">
           <Link href="/" className="flex items-center gap-2">
@@ -90,6 +90,69 @@ export default function Home() {
           </article>
         </section>
       </div>
+
+      {/* ===== Add: Features / Main goals / About (kept below existing content) ===== */}
+      <section className="py-12">
+        <div className="shell max-w-4xl mx-auto">
+          <h2 className="text-2xl font-bold mb-4 text-[var(--brand-strong)] text-center">Features</h2>
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            <article className="p-5 surface-card rounded-lg shadow-sm text-justify">
+              <h3 className="font-semibold text-[var(--brand-strong)] mb-2">Personalized recommendations</h3>
+              <p className="text-sm text-slate-600">Events matched to your interests so you discover what's relevant quickly.</p>
+            </article>
+
+            <article className="p-5 surface-card rounded-lg shadow-sm text-justify">
+              <h3 className="font-semibold text-[var(--brand-strong)] mb-2">Reminders & alerts</h3>
+              <p className="text-sm text-slate-600">Automatic reminders (3 days, 1 day, 1 hour) and deadline alerts for watchlisted events.</p>
+            </article>
+
+            <article className="p-5 surface-card rounded-lg shadow-sm text-justify">
+              <h3 className="font-semibold text-[var(--brand-strong)] mb-2">Organizer tools</h3>
+              <p className="text-sm text-slate-600">Create and manage events, track registrations and publish updates or results.</p>
+            </article>
+
+            <article className="p-5 surface-card rounded-lg shadow-sm text-justify">
+              <h3 className="font-semibold text-[var(--brand-strong)] mb-2">Notifications center</h3>
+              <p className="text-sm text-slate-600">Centralized notification center with per-type preferences (email / in-app).</p>
+            </article>
+
+            <article className="p-5 surface-card rounded-lg shadow-sm text-justify">
+              <h3 className="font-semibold text-[var(--brand-strong)] mb-2">QR-based attendance</h3>
+              <p className="text-sm text-slate-600">Quick check-in for events using generated QR codes for students.</p>
+            </article>
+
+            <article className="p-5 surface-card rounded-lg shadow-sm text-justify">
+              <h3 className="font-semibold text-[var(--brand-strong)] mb-2">Search & discover</h3>
+              <p className="text-sm text-slate-600">Powerful search with filters for type, date and city — switch off personalized filter when searching broadly.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section className="py-12 bg-[var(--surface-soft)]">
+        <div className="shell max-w-4xl mx-auto">
+          <h2 className="text-2xl font-bold mb-4 text-[var(--brand-strong)] text-center">Main goals</h2>
+          <div className="mx-auto max-w-3xl text-justify text-slate-700">
+            <ol className="list-decimal list-inside space-y-3">
+              <li>Increase student awareness of campus activities through personalized discovery.</li>
+              <li>Reduce organizer overhead for event management, registration, and communication.</li>
+              <li>Provide a reliable notification system to keep participants informed and engaged.</li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <section className="py-12">
+        <div className="shell max-w-4xl mx-auto">
+          <h2 className="text-2xl font-bold mb-4 text-[var(--brand-strong)] text-center">About</h2>
+          <div className="mx-auto max-w-3xl text-justify text-slate-700">
+            <p className="mb-3">EventDhundo is a campus-focused event discovery platform built to connect students and organizers. It emphasizes relevance, low-friction event registration, and clear communication.</p>
+            <p className="mb-3">Register to try personalized recommendations or browse public events without an account.</p>
+          </div>
+        </div>
+      </section>
+      {/* ===== End added sections ===== */}
+
     </main>
   );
 }

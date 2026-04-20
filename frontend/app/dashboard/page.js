@@ -1,11 +1,17 @@
 "use client";
 import Link from 'next/link';
-import { useEffect, useState, useMemo } from 'react';
 import SidebarNotificationBell from '@/components/SidebarNotificationBell';
+import { useEffect, useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
+import AuthGuard from '@/components/AuthGuard';
+import ConfirmModal from '@/components/ConfirmModal';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 export default function DashboardStudent() {
+  const router = useRouter();
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+
   const [userRole, setUserRole] = useState('');
   const [events, setEvents] = useState([]);
   const [registeredEventIds, setRegisteredEventIds] = useState([]);
@@ -21,6 +27,7 @@ export default function DashboardStudent() {
   const [selectedCity, setSelectedCity] = useState('all');
   const [dateOrder, setDateOrder] = useState('asc'); // 'asc' | 'desc'
   const [searchTerm, setSearchTerm] = useState('');
+  const [userInterests, setUserInterests] = useState([]);
 
   function formatDate(value) {
     if (!value) return '';
@@ -29,10 +36,33 @@ export default function DashboardStudent() {
     return d.toLocaleDateString();
   }
 
+  // read user interests from storage (tries JSON array or comma string)
+  function readStoredInterests(userId) {
+    if (typeof window === 'undefined') return [];
+    const keys = [
+      `interests:${userId}`,
+      'userInterests',
+      'interests',
+    ];
+    for (const k of keys) {
+      const v = sessionStorage.getItem(k) || localStorage.getItem(k);
+      if (!v) continue;
+      try {
+        const parsed = JSON.parse(v);
+        if (Array.isArray(parsed)) return parsed.map(String);
+      } catch (e) {
+        // try csv
+        return v.split(',').map(s => s.trim()).filter(Boolean);
+      }
+    }
+    return [];
+  }
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setUserRole((sessionStorage.getItem('userRole') || localStorage.getItem('userRole') || '').toLowerCase());
       const id = sessionStorage.getItem('userId') || sessionStorage.getItem('userID') || localStorage.getItem('userId') || localStorage.getItem('userID');
+      setUserInterests(readStoredInterests(id));
       const name = id ? (localStorage.getItem(`displayName:${id}`) || sessionStorage.getItem('displayName') || localStorage.getItem('displayName')) : (sessionStorage.getItem('displayName') || localStorage.getItem('displayName'));
       const email = id ? (localStorage.getItem(`userEmail:${id}`) || sessionStorage.getItem('userEmail') || localStorage.getItem('userEmail')) : (sessionStorage.getItem('userEmail') || localStorage.getItem('userEmail'));
       if (name) setDisplayName(name);
@@ -167,9 +197,49 @@ export default function DashboardStudent() {
     });
   }, [events, viewMode, userId]);
 
-  // apply filters: type, search, date ordering
+  // helper: check if an event matches user's interests
+  function eventMatchesInterests(ev, interests) {
+    if (!interests || interests.length === 0) return false;
+    const kws = new Set();
+    const add = (v) => {
+      if (!v) return;
+      if (Array.isArray(v)) v.forEach(x => add(x));
+      else String(v).split(',').map(s => s.trim()).filter(Boolean).forEach(s => kws.add(s.toLowerCase()));
+    };
+    add(ev.eventType || ev.EventType);
+    add(ev.title || ev.Title);
+    add(ev.description || ev.Description);
+    add(ev.tags || ev.Tags || ev.EventTags || ev.TagsString);
+    // also split description/title words
+    if (ev.title) (ev.title || '').toLowerCase().split(/\W+/).forEach(t => t && kws.add(t));
+    if (ev.description) (ev.description || '').toLowerCase().split(/\W+/).forEach(t => t && kws.add(t));
+    // now match interests as substrings against kws entries
+    const lowerInterests = interests.map(i => String(i).toLowerCase());
+    for (const interest of lowerInterests) {
+      for (const kw of kws) {
+        if (kw.includes(interest) || interest.includes(kw)) return true;
+      }
+    }
+    return false;
+  }
+
+  // apply filters: type, search, date ordering, and interest-filter by default
   const displayedEvents = useMemo(() => {
     let list = baseEvents.slice();
+
+    // determine whether user has actively searched/filtered;
+    // when active => do NOT apply interest filter (show normal search results)
+    const searchActive = Boolean(
+      (searchTerm && searchTerm.trim()) ||
+      (selectedType && selectedType !== 'all' && selectedType !== '') ||
+      (selectedCity && selectedCity !== 'all' && selectedCity !== '')
+    );
+
+    // apply interest filter only when there is at least one interest and no searchActive
+    if (!searchActive && userInterests && userInterests.length > 0) {
+      list = list.filter(ev => eventMatchesInterests(ev, userInterests));
+    }
+
     if (selectedType && selectedType !== 'all') {
       list = list.filter(ev => ((ev.eventType || ev.EventType || '').toString().toLowerCase()) === selectedType.toString().toLowerCase());
     }
@@ -186,7 +256,19 @@ export default function DashboardStudent() {
       return dateOrder === 'asc' ? ad - bd : bd - ad;
     });
     return list;
-  }, [baseEvents, selectedType, selectedCity, searchTerm, dateOrder]);
+  }, [baseEvents, selectedType, selectedCity, searchTerm, dateOrder, userInterests]);
+
+  function doLogout() {
+    const uid = sessionStorage.getItem('userID') || sessionStorage.getItem('userId') || localStorage.getItem('userID') || localStorage.getItem('userId');
+    sessionStorage.removeItem('userID'); sessionStorage.removeItem('userId');
+    sessionStorage.removeItem('userRole'); sessionStorage.removeItem('token'); sessionStorage.removeItem('displayName'); sessionStorage.removeItem('userEmail');
+    localStorage.removeItem('token'); localStorage.removeItem('userRole'); localStorage.removeItem('displayName'); localStorage.removeItem('userEmail');
+    if (uid) {
+      localStorage.removeItem(`displayName:${uid}`); localStorage.removeItem(`userEmail:${uid}`);
+      sessionStorage.removeItem(`displayName:${uid}`); sessionStorage.removeItem(`userEmail:${uid}`);
+    }
+    router.push('/');
+  }
 
   const SidePanelContent = ({ compact = false }) => {
     const profilePic = typeof window !== 'undefined'
@@ -236,9 +318,12 @@ export default function DashboardStudent() {
         </nav>
 
         <div className={`w-full mt-6 border-t ${compact ? 'border-slate-200 pt-3' : 'border-white/25 pt-4'}`}>
-          <Link href="/" className={`${compact ? 'text-slate-700 hover:text-slate-900' : 'text-white/85 hover:text-white'} text-sm font-medium`}>
-            Return to Home
-          </Link>
+          <button
+            onClick={() => setShowLogoutModal(true)}
+            className={`${compact ? 'text-slate-700 hover:text-slate-900' : 'text-white/85 hover:text-white'} text-sm font-medium`}
+          >
+            Logout
+          </button>
         </div>
       </div>
     );
@@ -246,6 +331,15 @@ export default function DashboardStudent() {
 
   return (
     <main className="min-h-screen px-0 py-8">
+      {/* require authentication */}
+      <AuthGuard />
+      <ConfirmModal
+        open={showLogoutModal}
+        title="Log out"
+        message="⚠️ You are about to log out. Do you want to continue?"
+        onConfirm={() => { setShowLogoutModal(false); doLogout(); }}
+        onCancel={() => setShowLogoutModal(false)}
+      />
       <div className="shell mx-auto max-w-[1600px]">
         <header className="glass reveal-up rounded-2xl p-5 md:p-7 mb-4 lg:ml-80">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">

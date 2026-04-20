@@ -1,7 +1,10 @@
 "use client";
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
 import SidebarNotificationBell from '@/components/SidebarNotificationBell';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import AuthGuard from '@/components/AuthGuard';
+import ConfirmModal from '@/components/ConfirmModal';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -15,6 +18,21 @@ const DEFAULT_EVENT_TYPES = [
 ];
 
 export default function DashboardO() {
+  const router = useRouter();
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+
+  function doLogout() {
+    const uid = sessionStorage.getItem('userID') || sessionStorage.getItem('userId') || localStorage.getItem('userID') || localStorage.getItem('userId');
+    sessionStorage.removeItem('userID'); sessionStorage.removeItem('userId');
+    sessionStorage.removeItem('userRole'); sessionStorage.removeItem('token'); sessionStorage.removeItem('displayName'); sessionStorage.removeItem('userEmail');
+    localStorage.removeItem('token'); localStorage.removeItem('userRole'); localStorage.removeItem('displayName'); localStorage.removeItem('userEmail');
+    if (uid) {
+      localStorage.removeItem(`displayName:${uid}`); localStorage.removeItem(`userEmail:${uid}`);
+      sessionStorage.removeItem(`displayName:${uid}`); sessionStorage.removeItem(`userEmail:${uid}`);
+    }
+    router.push('/');
+  }
+
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -27,12 +45,33 @@ export default function DashboardO() {
   const [dateOrder, setDateOrder] = useState("asc");
   const [searchTerm, setSearchTerm] = useState("");
   const [removeCandidate, setRemoveCandidate] = useState("");
+  const [userInterests, setUserInterests] = useState([]);
   const organizerId = typeof window !== "undefined"
     ? (sessionStorage.getItem("userID") || sessionStorage.getItem("userId") || localStorage.getItem("userID") || localStorage.getItem("userId"))
     : null;
   const token = typeof window !== "undefined"
     ? (sessionStorage.getItem("token") || localStorage.getItem("token") || "")
     : "";
+
+  function readStoredInterests(userId) {
+    if (typeof window === 'undefined') return [];
+    const keys = [
+      `interests:${userId}`,
+      'userInterests',
+      'interests',
+    ];
+    for (const k of keys) {
+      const v = sessionStorage.getItem(k) || localStorage.getItem(k);
+      if (!v) continue;
+      try {
+        const parsed = JSON.parse(v);
+        if (Array.isArray(parsed)) return parsed.map(String);
+      } catch (e) {
+        return v.split(',').map(s => s.trim()).filter(Boolean);
+      }
+    }
+    return [];
+  }
 
   useEffect(() => {
     const savedName = organizerId
@@ -48,6 +87,7 @@ export default function DashboardO() {
       : (sessionStorage.getItem("userEmail") || localStorage.getItem("userEmail"));
     if (savedName) setOrgName(savedName);
     if (savedEmail) setUserEmail(savedEmail);
+    setUserInterests(readStoredInterests(organizerId));
 
     const fetchEvents = async () => {
       try {
@@ -119,6 +159,30 @@ export default function DashboardO() {
     }
   };
 
+  // helper: check if an event matches user's interests
+  function eventMatchesInterests(ev, interests) {
+    if (!interests || interests.length === 0) return false;
+    const kws = new Set();
+    const add = (v) => {
+      if (!v) return;
+      if (Array.isArray(v)) v.forEach(x => add(x));
+      else String(v).split(',').map(s => s.trim()).filter(Boolean).forEach(s => kws.add(s.toLowerCase()));
+    };
+    add(ev.EventType || ev.eventType);
+    add(ev.Title || ev.title);
+    add(ev.Description || ev.description);
+    add(ev.Tags || ev.tags || ev.EventTags);
+    if (ev.Title) (ev.Title || '').toLowerCase().split(/\W+/).forEach(t => t && kws.add(t));
+    if (ev.Description) (ev.Description || '').toLowerCase().split(/\W+/).forEach(t => t && kws.add(t));
+    const lowerInterests = interests.map(i => String(i).toLowerCase());
+    for (const interest of lowerInterests) {
+      for (const kw of kws) {
+        if (kw.includes(interest) || interest.includes(kw)) return true;
+      }
+    }
+    return false;
+  }
+
   // apply client-side filters/sorting
   const visibleEvents = events
     .filter((e) => {
@@ -126,6 +190,20 @@ export default function DashboardO() {
       const matchesSearch = !search || [e.Title, e.title, e.Description, e.description, e.Venue, e.venue]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(search));
+
+      // determine whether search/filter is active (then do not apply interests filter)
+      const searchActive = Boolean(
+        (searchTerm && searchTerm.trim()) ||
+        (selectedType && selectedType !== '') ||
+        (selectedCity && selectedCity !== '')
+      );
+
+      // apply interest filter by default (when not actively searching) for organizer
+      if (!searchActive && userInterests && userInterests.length > 0) {
+        const matchesInterest = eventMatchesInterests(e, userInterests);
+        // if not matching interests, filter out
+        if (!matchesInterest) return false;
+      }
 
       // filter by EventType from schema; empty = all
       const matchesType = !selectedType || String(e.EventType || e.EventCategory || "").toLowerCase() === String(selectedType).toLowerCase();
@@ -200,12 +278,12 @@ export default function DashboardO() {
         </nav>
 
         <div className={`w-full mt-6 border-t ${compact ? "border-slate-200 pt-3" : "border-white/25 pt-4"}`}>
-          <Link
-            href="/"
+          <button
+            onClick={() => setShowLogoutModal(true)}
             className={`${compact ? "text-slate-700 hover:text-slate-900" : "text-white/85 hover:text-white"} text-sm font-medium`}
           >
-            Return to Home
-          </Link>
+            Logout
+          </button>
         </div>
       </div>
     );
@@ -213,6 +291,14 @@ export default function DashboardO() {
 
   return (
     <main className="min-h-screen px-0 py-8">
+      <AuthGuard />
+      <ConfirmModal
+        open={showLogoutModal}
+        title="Log out"
+        message="⚠️ You are about to log out. Do you want to continue?"
+        onConfirm={() => { setShowLogoutModal(false); doLogout(); }}
+        onCancel={() => setShowLogoutModal(false)}
+      />
       <div className="shell mx-auto max-w-[1200px]">
         <header className="glass reveal-up rounded-2xl p-5 md:p-7 mb-4 lg:ml-80">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">

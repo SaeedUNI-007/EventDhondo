@@ -115,6 +115,12 @@ const isRegistrationClosedForEvent = (eventRow) => {
     };
 };
 
+const isEventCompleted = (eventRow) => {
+    const now = Date.now();
+    const startMs = getEventStartTimestamp(eventRow?.EventDate, eventRow?.EventTime);
+    return Number.isFinite(startMs) && now >= startMs;
+};
+
 // ─── QR Token helpers ──────────────────────────────────────────────────────
 
 const buildStudentQrToken = (userId) => {
@@ -300,6 +306,7 @@ router.get('/events', async (req, res) => {
         const { category, search, date, organizerId, city } = req.query;
         const hasOrganizerFilter = Number.isInteger(Number(organizerId));
 
+        // Always use the base query (includes all events, not just upcoming)
         let query = hasOrganizerFilter
             ? `
                 SELECT e.EventID, e.OrganizerID, e.Title, e.Description, e.EventType,
@@ -310,7 +317,16 @@ router.get('/events', async (req, res) => {
                 JOIN OrganizerProfiles o ON e.OrganizerID = o.UserID
                 WHERE e.OrganizerID = @OrganizerID
             `
-            : `SELECT * FROM vw_UpcomingEvents WHERE 1=1`;
+            : `
+                SELECT e.EventID, e.OrganizerID, e.Title, e.Description, e.EventType,
+                    e.EventDate, e.EventTime, e.Venue, e.City, e.Capacity, e.Status, e.PosterURL,
+                    o.OrganizationName AS Organizer, o.ContactEmail AS OrganizerEmail,
+                    o.ProfilePictureURL AS OrganizerLogo,
+                    (SELECT TOP 1 CategoryName FROM EventCategories ec JOIN EventCategoryMapping ecm ON ec.CategoryID = ecm.CategoryID WHERE ecm.EventID = e.EventID) AS Category
+                FROM Events e
+                JOIN OrganizerProfiles o ON e.OrganizerID = o.UserID
+                WHERE e.Status = 'Published' AND e.Status NOT IN ('Cancelled')
+            `;
 
         const pool = await poolPromise;
         const request = pool.request();
@@ -320,12 +336,19 @@ router.get('/events', async (req, res) => {
         if (search) { query += ' AND (Title LIKE @Search OR Description LIKE @Search)'; request.input('Search', sql.NVarChar, `%${search}%`); }
         if (date) { query += ' AND EventDate = @Date'; request.input('Date', sql.Date, date); }
         if (city) {
-            query += hasOrganizerFilter ? ' AND e.City = @City' : ' AND City = @City';
+            query += ' AND e.City = @City';
             request.input('City', sql.NVarChar(100), String(city).trim());
         }
 
         const result = await request.query(query);
-        res.json(result.recordset);
+        
+        // Add isCompleted flag to each event
+        const eventsWithCompletion = (result.recordset || []).map(ev => ({
+            ...ev,
+            isCompleted: isEventCompleted(ev),
+        }));
+        
+        res.json(eventsWithCompletion);
     } catch (err) {
         console.error('Event Fetch Error:', err);
         res.status(500).send(err.message);
@@ -356,7 +379,7 @@ router.get('/events/:id', async (req, res) => {
                     op.Description AS OrganizerDescription, op.City AS OrganizerCity, op.ProfilePictureURL AS OrganizerLogo,
                     u.Email AS OrganizerAccountEmail,
                     (SELECT COUNT(*) FROM Registrations r
-                     WHERE r.EventID = e.EventID AND r.Status = 'Confirmed') AS ConfirmedRegistrations
+                     WHERE r.EventID = e.EventID AND r.Status IN ('Confirmed','Attended')) AS ConfirmedRegistrations
                 FROM Events e
                 JOIN OrganizerProfiles op ON e.OrganizerID = op.UserID
                 JOIN Users u ON op.UserID = u.UserID
@@ -1263,6 +1286,543 @@ router.get('/organizer/registrations/:eventId', authMiddleware, async (req, res)
     }
 });
 
+// ─── Route: GET /events/:eventId/results ─────────────────────────────────
+router.get('/events/:eventId/results', authMiddleware, async (req, res) => {
+    const eventId = Number(req.params.eventId);
+    const requesterId = Number(req.user?.UserID);
+    const requesterRole = String(req.user?.Role || '').toLowerCase();
+
+    if (!Number.isInteger(eventId) || eventId <= 0) {
+        return res.status(400).json({ success: false, message: 'Valid eventId is required' });
+    }
+
+    try {
+        const pool = await poolPromise;
+        const eventResult = await pool.request()
+            .input('EventID', sql.Int, eventId)
+            .query(`
+                SELECT TOP 1 EventID, OrganizerID, EventType, EventDate, EventTime, Status
+                FROM [dbo].[Events]
+                WHERE EventID = @EventID
+            `);
+
+        const eventRow = eventResult.recordset?.[0];
+        if (!eventRow) return res.status(404).json({ success: false, message: 'Event not found' });
+
+        if (requesterRole !== 'admin' && Number(eventRow.OrganizerID) !== requesterId) {
+            return res.status(403).json({ success: false, message: 'You can only view results for your own events' });
+        }
+
+        const isCompetition = String(eventRow.EventType || '').toLowerCase() === 'competition';
+        if (!isCompetition) {
+            return res.status(400).json({ success: false, message: 'Results are only applicable for competition events' });
+        }
+
+        const result = await pool.request()
+            .input('EventID', sql.Int, eventId)
+            .query(`
+                SELECT
+                    r.UserID,
+                    u.Email,
+                    sp.FirstName,
+                    sp.LastName,
+                    r.Status AS RegistrationStatus,
+                    sa.AchievementID,
+                    sa.Position,
+                    sa.AchievementDate,
+                    sa.Description
+                FROM [dbo].[Registrations] r
+                JOIN [dbo].[Users] u ON u.UserID = r.UserID
+                LEFT JOIN [dbo].[StudentProfiles] sp ON sp.UserID = r.UserID
+                LEFT JOIN [dbo].[StudentAchievements] sa
+                    ON sa.EventID = r.EventID AND sa.UserID = r.UserID
+                WHERE r.EventID = @EventID
+                  AND LOWER(ISNULL(r.Status, '')) <> 'cancelled'
+                ORDER BY ISNULL(sa.AchievementID, 0) DESC, r.RegistrationDate DESC
+            `);
+
+        return res.json({
+            success: true,
+            event: {
+                eventId: eventRow.EventID,
+                eventType: eventRow.EventType,
+                status: eventRow.Status,
+                isCompleted: isEventCompleted(eventRow),
+            },
+            results: result.recordset || [],
+        });
+    } catch (err) {
+        return res.status(500).json({ success: false, message: err.message || 'Failed to fetch event results' });
+    }
+});
+
+// ─── Route: POST /events/:eventId/results ────────────────────────────────
+router.post('/events/:eventId/results', authMiddleware, async (req, res) => {
+    const eventId = Number(req.params.eventId);
+    const requesterId = Number(req.user?.UserID);
+    const requesterRole = String(req.user?.Role || '').toLowerCase();
+    const entries = Array.isArray(req.body?.results) ? req.body.results : [];
+
+    if (!Number.isInteger(eventId) || eventId <= 0) {
+        return res.status(400).json({ success: false, message: 'Valid eventId is required' });
+    }
+
+    if (entries.length === 0) {
+        return res.status(400).json({ success: false, message: 'results must be a non-empty array' });
+    }
+
+    try {
+        const pool = await poolPromise;
+        const eventResult = await pool.request()
+            .input('EventID', sql.Int, eventId)
+            .query(`
+                SELECT TOP 1 EventID, OrganizerID, EventType, EventDate, EventTime, Status
+                FROM [dbo].[Events]
+                WHERE EventID = @EventID
+            `);
+
+        const eventRow = eventResult.recordset?.[0];
+        if (!eventRow) return res.status(404).json({ success: false, message: 'Event not found' });
+
+        if (requesterRole !== 'admin' && Number(eventRow.OrganizerID) !== requesterId) {
+            return res.status(403).json({ success: false, message: 'You can only submit results for your own events' });
+        }
+
+        const isCompetition = String(eventRow.EventType || '').toLowerCase() === 'competition';
+        if (!isCompetition) {
+            return res.status(400).json({ success: false, message: 'Results are only applicable for competition events' });
+        }
+
+        const completedByStatus = String(eventRow.Status || '').toLowerCase() === 'completed';
+        const completedByTime = isEventCompleted(eventRow);
+        if (!completedByStatus && !completedByTime) {
+            return res.status(400).json({ success: false, message: 'You can submit competition results only after event completion' });
+        }
+
+        const activeRegistrations = await pool.request()
+            .input('EventID', sql.Int, eventId)
+            .query(`
+                SELECT UserID
+                FROM [dbo].[Registrations]
+                WHERE EventID = @EventID
+                  AND LOWER(ISNULL(Status, '')) <> 'cancelled'
+            `);
+        const allowedUserIds = new Set((activeRegistrations.recordset || []).map((r) => Number(r.UserID)));
+
+        const normalized = entries
+            .map((entry) => ({
+                userId: Number(entry?.userId),
+                position: String(entry?.position || '').trim(),
+                description: entry?.description === undefined ? null : (String(entry.description || '').trim() || null),
+                achievementDate: entry?.achievementDate ? new Date(entry.achievementDate) : new Date(),
+            }))
+            .filter((entry) => Number.isInteger(entry.userId) && entry.userId > 0 && entry.position.length > 0);
+
+        if (normalized.length === 0) {
+            return res.status(400).json({ success: false, message: 'At least one valid result entry is required' });
+        }
+
+        for (const entry of normalized) {
+            if (!allowedUserIds.has(entry.userId)) {
+                return res.status(400).json({
+                    success: false,
+                    message: `User ${entry.userId} is not an active participant of this event`,
+                });
+            }
+            if (Number.isNaN(entry.achievementDate.getTime())) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Invalid achievementDate for user ${entry.userId}`,
+                });
+            }
+        }
+
+        const tx = new sql.Transaction(await poolPromise);
+        await tx.begin();
+        try {
+            for (const entry of normalized) {
+                const existing = await new sql.Request(tx)
+                    .input('EventID', sql.Int, eventId)
+                    .input('UserID', sql.Int, entry.userId)
+                    .query(`
+                        SELECT TOP 1 AchievementID
+                        FROM [dbo].[StudentAchievements]
+                        WHERE EventID = @EventID AND UserID = @UserID
+                        ORDER BY AchievementID DESC
+                    `);
+
+                const existingId = existing.recordset?.[0]?.AchievementID;
+
+                if (existingId) {
+                    await new sql.Request(tx)
+                        .input('AchievementID', sql.Int, Number(existingId))
+                        .input('Position', sql.NVarChar(50), entry.position)
+                        .input('AchievementDate', sql.Date, entry.achievementDate)
+                        .input('Description', sql.NVarChar(sql.MAX), entry.description)
+                        .query(`
+                            UPDATE [dbo].[StudentAchievements]
+                            SET Position = @Position,
+                                AchievementDate = @AchievementDate,
+                                Description = @Description
+                            WHERE AchievementID = @AchievementID
+                        `);
+                } else {
+                    await new sql.Request(tx)
+                        .input('UserID', sql.Int, entry.userId)
+                        .input('EventID', sql.Int, eventId)
+                        .input('Position', sql.NVarChar(50), entry.position)
+                        .input('AchievementDate', sql.Date, entry.achievementDate)
+                        .input('Description', sql.NVarChar(sql.MAX), entry.description)
+                        .query(`
+                            INSERT INTO [dbo].[StudentAchievements] (UserID, EventID, Position, AchievementDate, Description)
+                            VALUES (@UserID, @EventID, @Position, @AchievementDate, @Description)
+                        `);
+                }
+            }
+
+            await tx.commit();
+            return res.json({ success: true, message: 'Competition results saved successfully', savedCount: normalized.length });
+        } catch (err) {
+            await tx.rollback();
+            throw err;
+        }
+    } catch (err) {
+        return res.status(500).json({ success: false, message: err.message || 'Failed to save competition results' });
+    }
+});
+
+const loadPortfolioData = async (targetUserId) => {
+    const pool = await poolPromise;
+
+    const [summaryResult, achievementsResult, timelineResult, participationsResult, categoriesResult, skillsResult, profileResult] = await Promise.all([
+        pool.request()
+            .input('UserID', sql.Int, targetUserId)
+            .query(`
+                SELECT TOP 1
+                    sp.UserID,
+                    CONCAT(sp.FirstName, ' ', sp.LastName) AS StudentName,
+                    u.Email,
+                    sp.Department,
+                    sp.YearOfStudy,
+
+                    (
+                        SELECT COUNT(DISTINCT r1.EventID)
+                        FROM [dbo].[Registrations] r1
+                        LEFT JOIN [dbo].[Attendance] a1 ON a1.RegistrationID = r1.RegistrationID
+                        JOIN [dbo].[Events] e1 ON e1.EventID = r1.EventID
+                        WHERE r1.UserID = sp.UserID
+                          AND LOWER(ISNULL(r1.Status, '')) <> 'cancelled'
+                          AND (a1.AttendanceID IS NOT NULL OR LOWER(ISNULL(r1.Status, '')) = 'attended')
+                          AND (
+                              LOWER(ISNULL(e1.Status, '')) = 'completed'
+                              OR e1.EventDate < CAST(GETDATE() AS DATE)
+                              OR (
+                                  e1.EventDate = CAST(GETDATE() AS DATE)
+                                  AND CAST(ISNULL(e1.EventTime, '23:59:59') AS TIME) <= CAST(GETDATE() AS TIME)
+                              )
+                          )
+                    ) AS TotalEventsAttended,
+
+                    (
+                        SELECT COUNT(DISTINCT r2.EventID)
+                        FROM [dbo].[Registrations] r2
+                        WHERE r2.UserID = sp.UserID
+                          AND LOWER(ISNULL(r2.Status, '')) <> 'cancelled'
+                    ) AS TotalEventsRegistered,
+
+                    (
+                        SELECT COUNT(DISTINCT r3.EventID)
+                        FROM [dbo].[Registrations] r3
+                        LEFT JOIN [dbo].[Attendance] a3 ON a3.RegistrationID = r3.RegistrationID
+                        JOIN [dbo].[Events] e3 ON e3.EventID = r3.EventID
+                        WHERE r3.UserID = sp.UserID
+                          AND LOWER(ISNULL(r3.Status, '')) <> 'cancelled'
+                          AND (a3.AttendanceID IS NOT NULL OR LOWER(ISNULL(r3.Status, '')) = 'attended')
+                          AND LOWER(ISNULL(e3.EventType, '')) = 'competition'
+                          AND (
+                              LOWER(ISNULL(e3.Status, '')) = 'completed'
+                              OR e3.EventDate < CAST(GETDATE() AS DATE)
+                              OR (
+                                  e3.EventDate = CAST(GETDATE() AS DATE)
+                                  AND CAST(ISNULL(e3.EventTime, '23:59:59') AS TIME) <= CAST(GETDATE() AS TIME)
+                              )
+                          )
+                    ) AS TotalCompetitionsAttended,
+
+                    (
+                        SELECT COUNT(*)
+                        FROM [dbo].[StudentAchievements] sa1
+                        WHERE sa1.UserID = sp.UserID
+                    ) AS TotalAchievements,
+
+                    (
+                        SELECT COUNT(*)
+                        FROM [dbo].[StudentAchievements] sa2
+                        WHERE sa2.UserID = sp.UserID
+                          AND (LOWER(ISNULL(sa2.Position, '')) LIKE '%1st%' OR LOWER(ISNULL(sa2.Position, '')) LIKE '%winner%')
+                    ) AS FirstPlaceCount,
+
+                    (
+                        SELECT COUNT(*)
+                        FROM [dbo].[StudentAchievements] sa3
+                        WHERE sa3.UserID = sp.UserID
+                          AND (LOWER(ISNULL(sa3.Position, '')) LIKE '%2nd%' OR LOWER(ISNULL(sa3.Position, '')) LIKE '%runner%')
+                    ) AS SecondPlaceCount,
+
+                    (
+                        SELECT COUNT(*)
+                        FROM [dbo].[StudentAchievements] sa4
+                        WHERE sa4.UserID = sp.UserID
+                          AND LOWER(ISNULL(sa4.Position, '')) LIKE '%3rd%'
+                    ) AS ThirdPlaceCount,
+
+                    CAST(
+                        CASE
+                            WHEN (
+                                SELECT COUNT(DISTINCT ce.EventID)
+                                FROM (
+                                    SELECT r5.EventID
+                                    FROM [dbo].[Registrations] r5
+                                    LEFT JOIN [dbo].[Attendance] a5 ON a5.RegistrationID = r5.RegistrationID
+                                    JOIN [dbo].[Events] e5 ON e5.EventID = r5.EventID
+                                    WHERE r5.UserID = sp.UserID
+                                      AND LOWER(ISNULL(r5.Status, '')) <> 'cancelled'
+                                      AND (a5.AttendanceID IS NOT NULL OR LOWER(ISNULL(r5.Status, '')) = 'attended')
+                                      AND LOWER(ISNULL(e5.EventType, '')) = 'competition'
+                                      AND (
+                                          LOWER(ISNULL(e5.Status, '')) = 'completed'
+                                          OR e5.EventDate < CAST(GETDATE() AS DATE)
+                                          OR (
+                                              e5.EventDate = CAST(GETDATE() AS DATE)
+                                              AND CAST(ISNULL(e5.EventTime, '23:59:59') AS TIME) <= CAST(GETDATE() AS TIME)
+                                          )
+                                      )
+                                    UNION
+                                    SELECT sa6.EventID
+                                    FROM [dbo].[StudentAchievements] sa6
+                                    JOIN [dbo].[Events] e6a ON e6a.EventID = sa6.EventID
+                                    WHERE sa6.UserID = sp.UserID
+                                      AND LOWER(ISNULL(e6a.EventType, '')) = 'competition'
+                                ) ce
+                            ) = 0 THEN 0
+                            ELSE (
+                                (
+                                    SELECT COUNT(DISTINCT sa5.EventID)
+                                    FROM [dbo].[StudentAchievements] sa5
+                                    JOIN [dbo].[Events] e6 ON e6.EventID = sa5.EventID
+                                    WHERE sa5.UserID = sp.UserID
+                                      AND LOWER(ISNULL(e6.EventType, '')) = 'competition'
+                                      AND (
+                                          LOWER(ISNULL(sa5.Position, '')) LIKE '%1st%'
+                                          OR LOWER(ISNULL(sa5.Position, '')) LIKE '%winner%'
+                                          OR LOWER(ISNULL(sa5.Position, '')) LIKE '%2nd%'
+                                          OR LOWER(ISNULL(sa5.Position, '')) LIKE '%runner%'
+                                          OR LOWER(ISNULL(sa5.Position, '')) LIKE '%3rd%'
+                                      )
+                                ) * 100.0
+                            ) / (
+                                SELECT COUNT(DISTINCT ce2.EventID)
+                                FROM (
+                                    SELECT r6.EventID
+                                    FROM [dbo].[Registrations] r6
+                                    LEFT JOIN [dbo].[Attendance] a6 ON a6.RegistrationID = r6.RegistrationID
+                                    JOIN [dbo].[Events] e7 ON e7.EventID = r6.EventID
+                                    WHERE r6.UserID = sp.UserID
+                                      AND LOWER(ISNULL(r6.Status, '')) <> 'cancelled'
+                                      AND (a6.AttendanceID IS NOT NULL OR LOWER(ISNULL(r6.Status, '')) = 'attended')
+                                      AND LOWER(ISNULL(e7.EventType, '')) = 'competition'
+                                      AND (
+                                          LOWER(ISNULL(e7.Status, '')) = 'completed'
+                                          OR e7.EventDate < CAST(GETDATE() AS DATE)
+                                          OR (
+                                              e7.EventDate = CAST(GETDATE() AS DATE)
+                                              AND CAST(ISNULL(e7.EventTime, '23:59:59') AS TIME) <= CAST(GETDATE() AS TIME)
+                                          )
+                                      )
+                                    UNION
+                                    SELECT sa7.EventID
+                                    FROM [dbo].[StudentAchievements] sa7
+                                    JOIN [dbo].[Events] e8 ON e8.EventID = sa7.EventID
+                                    WHERE sa7.UserID = sp.UserID
+                                      AND LOWER(ISNULL(e8.EventType, '')) = 'competition'
+                                ) ce2
+                            )
+                        END
+                    AS DECIMAL(5,2)) AS CompetitionWinRatePercent
+                FROM [dbo].[StudentProfiles] sp
+                JOIN [dbo].[Users] u ON u.UserID = sp.UserID
+                WHERE sp.UserID = @UserID
+            `),
+        pool.request()
+            .input('UserID', sql.Int, targetUserId)
+            .query(`
+                SELECT
+                    sa.UserID,
+                    e.Title AS EventTitle,
+                    sa.Position,
+                    sa.AchievementDate,
+                    e.EventType,
+                    o.OrganizationName AS AwardedBy
+                FROM StudentAchievements sa
+                JOIN Events e ON sa.EventID = e.EventID
+                JOIN OrganizerProfiles o ON e.OrganizerID = o.UserID
+                WHERE sa.UserID = @UserID
+                ORDER BY sa.AchievementDate DESC, e.Title ASC
+            `),
+        pool.request()
+            .input('UserID', sql.Int, targetUserId)
+            .query(`
+                SELECT
+                    sa.UserID,
+                    DATEFROMPARTS(YEAR(sa.AchievementDate), MONTH(sa.AchievementDate), 1) AS MonthStart,
+                    COUNT(*) AS AchievementsCount,
+                    COUNT(DISTINCT sa.EventID) AS DistinctEvents,
+                    STRING_AGG(CAST(e.Title AS NVARCHAR(MAX)), ' | ') AS EventTitles
+                FROM StudentAchievements sa
+                JOIN Events e ON e.EventID = sa.EventID
+                WHERE sa.UserID = @UserID
+                GROUP BY sa.UserID, DATEFROMPARTS(YEAR(sa.AchievementDate), MONTH(sa.AchievementDate), 1)
+                ORDER BY MonthStart ASC
+            `),
+        pool.request()
+            .input('UserID', sql.Int, targetUserId)
+            .query(`
+                SELECT
+                    e.EventID,
+                    e.Title AS EventTitle,
+                    e.EventType,
+                    e.EventDate,
+                    r.Status AS RegistrationStatus,
+                    CAST(1 AS BIT) AS Attended,
+                    CASE
+                        WHEN LOWER(ISNULL(e.Status, '')) = 'completed'
+                          OR e.EventDate < CAST(GETDATE() AS DATE)
+                          OR (
+                              e.EventDate = CAST(GETDATE() AS DATE)
+                              AND CAST(ISNULL(e.EventTime, '23:59:59') AS TIME) <= CAST(GETDATE() AS TIME)
+                          )
+                        THEN CAST(1 AS BIT)
+                        ELSE CAST(0 AS BIT)
+                    END AS IsCompleted,
+                    sa.Position,
+                    sa.Description AS AchievementDescription
+                FROM [dbo].[Registrations] r
+                JOIN [dbo].[Events] e ON e.EventID = r.EventID
+                LEFT JOIN [dbo].[Attendance] a ON a.RegistrationID = r.RegistrationID
+                LEFT JOIN [dbo].[StudentAchievements] sa ON sa.UserID = r.UserID AND sa.EventID = r.EventID
+                WHERE r.UserID = @UserID
+                  AND LOWER(ISNULL(r.Status, '')) <> 'cancelled'
+                                    AND (a.AttendanceID IS NOT NULL OR LOWER(ISNULL(r.Status, '')) = 'attended')
+                                    AND (
+                                            LOWER(ISNULL(e.Status, '')) = 'completed'
+                                            OR e.EventDate < CAST(GETDATE() AS DATE)
+                                            OR (
+                                                    e.EventDate = CAST(GETDATE() AS DATE)
+                                                    AND CAST(ISNULL(e.EventTime, '23:59:59') AS TIME) <= CAST(GETDATE() AS TIME)
+                                            )
+                                    )
+                ORDER BY e.EventDate DESC
+            `),
+        pool.request()
+            .input('UserID', sql.Int, targetUserId)
+            .query(`
+                SELECT TOP 5
+                    e.EventType,
+                    COUNT(*) AS Count
+                FROM [dbo].[Registrations] r
+                JOIN [dbo].[Events] e ON e.EventID = r.EventID
+                LEFT JOIN [dbo].[Attendance] a ON a.RegistrationID = r.RegistrationID
+                WHERE r.UserID = @UserID
+                  AND LOWER(ISNULL(r.Status, '')) <> 'cancelled'
+                  AND (a.AttendanceID IS NOT NULL OR LOWER(ISNULL(r.Status, '')) = 'attended')
+                GROUP BY e.EventType
+                ORDER BY Count DESC, e.EventType ASC
+            `),
+        pool.request()
+            .input('UserID', sql.Int, targetUserId)
+            .query(`
+                SELECT DISTINCT s.SkillName
+                FROM [dbo].[Registrations] r
+                JOIN [dbo].[Events] e ON e.EventID = r.EventID
+                LEFT JOIN [dbo].[Attendance] a ON a.RegistrationID = r.RegistrationID
+                JOIN [dbo].[EventSkillMapping] esm ON esm.EventID = e.EventID
+                JOIN [dbo].[Skills] s ON s.SkillID = esm.SkillID
+                WHERE r.UserID = @UserID
+                  AND LOWER(ISNULL(r.Status, '')) <> 'cancelled'
+                  AND (a.AttendanceID IS NOT NULL OR LOWER(ISNULL(r.Status, '')) = 'attended')
+                ORDER BY s.SkillName ASC
+            `),
+        pool.request()
+            .input('UserID', sql.Int, targetUserId)
+            .query(`
+                SELECT TOP 1
+                    sp.LinkedInURL,
+                    sp.GitHubURL,
+                    sp.Department,
+                    sp.YearOfStudy,
+                    CONCAT(sp.FirstName, ' ', sp.LastName) AS StudentName
+                FROM [dbo].[StudentProfiles] sp
+                WHERE sp.UserID = @UserID
+            `),
+    ]);
+
+    const summary = summaryResult.recordset?.[0] || null;
+    if (!summary) return null;
+
+    return {
+        summary,
+        profile: profileResult.recordset?.[0] || null,
+        achievements: achievementsResult.recordset || [],
+        timeline: timelineResult.recordset || [],
+        participations: participationsResult.recordset || [],
+        mostActiveCategories: categoriesResult.recordset || [],
+        skillTags: (skillsResult.recordset || []).map((r) => r.SkillName).filter(Boolean),
+    };
+};
+
+// ─── Route: GET /portfolio/:userId ───────────────────────────────────────
+router.get('/portfolio/:userId', authMiddleware, async (req, res) => {
+    const targetUserId = Number(req.params.userId);
+    const requesterId = Number(req.user?.UserID);
+    const requesterRole = String(req.user?.Role || '').toLowerCase();
+
+    if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+        return res.status(400).json({ success: false, message: 'Valid userId is required' });
+    }
+
+    if (requesterRole !== 'admin' && requesterId !== targetUserId) {
+        return res.status(403).json({ success: false, message: 'You can only view your own portfolio' });
+    }
+
+    try {
+        const payload = await loadPortfolioData(targetUserId);
+        if (!payload) {
+            return res.status(404).json({ success: false, message: 'Student portfolio not found' });
+        }
+        return res.json({ success: true, ...payload });
+    } catch (err) {
+        return res.status(500).json({ success: false, message: err.message || 'Failed to fetch student portfolio' });
+    }
+});
+
+// ─── Route: GET /portfolio/public/:userId ────────────────────────────────
+router.get('/portfolio/public/:userId', async (req, res) => {
+    const targetUserId = Number(req.params.userId);
+    if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+        return res.status(400).json({ success: false, message: 'Valid userId is required' });
+    }
+
+    try {
+        const payload = await loadPortfolioData(targetUserId);
+        if (!payload) {
+            return res.status(404).json({ success: false, message: 'Public portfolio not found' });
+        }
+        return res.json({ success: true, ...payload });
+    } catch (err) {
+        return res.status(500).json({ success: false, message: err.message || 'Failed to fetch public portfolio' });
+    }
+});
+
 // ─── Route: GET /achievements/:userId ────────────────────────────────────
 router.get('/achievements/:userId', authMiddleware, async (req, res) => {
     const targetUserId = Number(req.params.userId);
@@ -1367,6 +1927,126 @@ router.get('/recommendations', async (req, res) => {
     console.error('Recommendations Error:', err);
     return res.status(500).json({ success: false, message: err.message || 'Failed to fetch recommendations' });
   }
+});
+
+// ─── Route: GET /events/attended/:userId ─────────────────────────────────
+// Student dashboard: Show attended events (registered + event has passed)
+router.get('/events/attended/:userId', authMiddleware, async (req, res) => {
+    const targetUserId = Number(req.params.userId);
+    const requesterId = Number(req.user?.UserID);
+    const requesterRole = String(req.user?.Role || '').toLowerCase();
+
+    if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+        return res.status(400).json({ success: false, message: 'Valid userId is required' });
+    }
+
+    // Only students can view their own attended events; admins can view any student's
+    if (requesterRole !== 'admin' && requesterId !== targetUserId) {
+        return res.status(403).json({ success: false, message: 'You can only view your own attended events' });
+    }
+
+    try {
+        const pool = await poolPromise;
+        const result = await pool.request()
+            .input('UserID', sql.Int, targetUserId)
+            .query(`
+                SELECT
+                    r.RegistrationID,
+                    r.EventID,
+                    r.UserID,
+                    r.Status AS RegistrationStatus,
+                    r.RegistrationDate,
+                    e.EventID,
+                    e.Title,
+                    e.Description,
+                    e.EventType,
+                    e.EventDate,
+                    e.EventTime,
+                    e.Venue,
+                    e.City,
+                    e.PosterURL,
+                    op.OrganizationName AS Organizer,
+                    op.ProfilePictureURL AS OrganizerLogo,
+                    CASE
+                        WHEN a.AttendanceID IS NOT NULL THEN 'Attended'
+                        ELSE 'Registered'
+                    END AS AttendanceStatus
+                FROM [dbo].[Registrations] r
+                JOIN [dbo].[Events] e ON e.EventID = r.EventID
+                LEFT JOIN [dbo].[OrganizerProfiles] op ON e.OrganizerID = op.UserID
+                LEFT JOIN [dbo].[Attendance] a ON a.RegistrationID = r.RegistrationID
+                WHERE r.UserID = @UserID
+                  AND r.Status <> 'Cancelled'
+                  AND (e.EventDate IS NULL OR e.EventDate < CONVERT(date, GETDATE()) OR e.Status = 'Completed')
+                ORDER BY e.EventDate DESC, e.EventTime DESC
+            `);
+
+        return res.json(result.recordset || []);
+    } catch (err) {
+        console.error('Attended Events Error:', err);
+        return res.status(500).json({ success: false, message: err.message || 'Failed to fetch attended events' });
+    }
+});
+
+// ─── Route: GET /events/completed ─────────────────────────────────────────
+// Organizer dashboard: Show completed events (past or marked completed)
+router.get('/events/completed', authMiddleware, async (req, res) => {
+    const organizerId = req.user?.UserID;
+    const requesterRole = String(req.user?.Role || '').toLowerCase();
+
+    if (!organizerId) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+
+    // Only organizers can view their completed events; admins can view all
+    if (requesterRole !== 'organizer' && requesterRole !== 'admin') {
+        return res.status(403).json({ success: false, message: 'Only organizers and admins can view completed events' });
+    }
+
+    try {
+        const pool = await poolPromise;
+
+        const whereClause = requesterRole === 'admin'
+            ? ''
+            : 'WHERE e.OrganizerID = @OrganizerID';
+
+        const sqlText = `
+            SELECT
+                e.EventID,
+                e.OrganizerID,
+                e.Title,
+                e.Description,
+                e.EventType,
+                e.EventDate,
+                e.EventTime,
+                e.Venue,
+                e.City,
+                e.Capacity,
+                e.Status,
+                e.PosterURL,
+                op.OrganizationName AS Organizer,
+                op.ContactEmail AS OrganizerEmail,
+                op.ProfilePictureURL AS OrganizerLogo,
+                (SELECT COUNT(*) FROM Registrations r WHERE r.EventID = e.EventID AND r.Status IN ('Confirmed','Attended')) AS ConfirmedRegistrations,
+                (SELECT COUNT(*) FROM Attendance a JOIN Registrations r ON a.RegistrationID = r.RegistrationID WHERE r.EventID = e.EventID) AS AttendanceCount
+            FROM [dbo].[Events] e
+            LEFT JOIN [dbo].[OrganizerProfiles] op ON e.OrganizerID = op.UserID
+            ${whereClause}
+            AND (e.Status = 'Completed' OR e.EventDate < CONVERT(date, GETDATE()))
+            ORDER BY e.EventDate DESC, e.EventTime DESC
+        `;
+
+        const request = pool.request();
+        if (requesterRole !== 'admin') {
+            request.input('OrganizerID', sql.Int, organizerId);
+        }
+
+        const result = await request.query(sqlText);
+        return res.json(result.recordset || []);
+    } catch (err) {
+        console.error('Completed Events Error:', err);
+        return res.status(500).json({ success: false, message: err.message || 'Failed to fetch completed events' });
+    }
 });
 
 module.exports = router;

@@ -12,14 +12,13 @@ export default function DashboardStudent() {
   const router = useRouter();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
-  const [userRole, setUserRole] = useState('');
   const [events, setEvents] = useState([]);
   const [registeredEventIds, setRegisteredEventIds] = useState([]);
   const [registeringByEventId, setRegisteringByEventId] = useState({});
   const [actionMessage, setActionMessage] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [userEmail, setUserEmail] = useState('');
-  const [viewMode, setViewMode] = useState('available'); // 'available' | 'yours'
+  const [viewMode, setViewMode] = useState('available'); // 'available' | 'attended'
   // filter state (like organizer dashboard)
   const [eventTypes, setEventTypes] = useState([]);
   const [cityOptions, setCityOptions] = useState([]);
@@ -60,7 +59,6 @@ export default function DashboardStudent() {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      setUserRole((sessionStorage.getItem('userRole') || localStorage.getItem('userRole') || '').toLowerCase());
       const id = sessionStorage.getItem('userId') || sessionStorage.getItem('userID') || localStorage.getItem('userId') || localStorage.getItem('userID');
       setUserInterests(readStoredInterests(id));
       const name = id ? (localStorage.getItem(`displayName:${id}`) || sessionStorage.getItem('displayName') || localStorage.getItem('displayName')) : (sessionStorage.getItem('displayName') || localStorage.getItem('displayName'));
@@ -190,12 +188,16 @@ export default function DashboardStudent() {
   // base set according to view mode
   const baseEvents = useMemo(() => {
     return events.filter(ev => {
-      if (viewMode === 'yours') return isOwner(ev);
+      if (viewMode === 'attended') {
+        const eventId = Number(ev.EventID || ev.id || ev.eventId);
+        const registered = Number.isInteger(eventId) && registeredEventIds.includes(eventId);
+        return registered && ev.isCompleted === true;
+      }
       const status = (ev.status || ev.Status || '').toString().toLowerCase();
       const published = status === 'published' || status === '';
-      return published && !isOwner(ev);
+      return published && ev.isCompleted !== true && !isOwner(ev);
     });
-  }, [events, viewMode, userId]);
+  }, [events, viewMode, registeredEventIds, userId]);
 
   // helper: check if an event matches user's interests
   function eventMatchesInterests(ev, interests) {
@@ -349,23 +351,17 @@ export default function DashboardStudent() {
               {userEmail && <p className="mt-2 text-sm text-slate-600">Signed in as {userEmail}</p>}
             </div>
 
-            <div className="flex flex-col gap-3 md:items-end">
-              {userRole === 'student' && (
-                <Link href="/event" className="inline-flex items-center rounded-md bg-[var(--brand)] text-white px-4 py-2 font-semibold">
-                  + Add Event
-                </Link>
-              )}
-            </div>
+            <div className="flex flex-col gap-3 md:items-end" />
           </div>
 
-          {/* Toggle between Available / Your Events */}
+          {/* Toggle between Available / Attended Events */}
           <div className="mt-4">
             <div className="inline-flex rounded-xl bg-[var(--surface-soft)] p-1">
               <button type="button" onClick={() => setViewMode('available')} className={`px-4 py-2 rounded-lg text-sm font-semibold ${viewMode === 'available' ? 'bg-white text-[var(--brand-strong)]' : 'text-slate-600'}`}>
                 Available Events
               </button>
-              <button type="button" onClick={() => setViewMode('yours')} className={`px-4 py-2 rounded-lg text-sm font-semibold ${viewMode === 'yours' ? 'bg-white text-[var(--brand-strong)]' : 'text-slate-600'}`}>
-                Your Events
+              <button type="button" onClick={() => setViewMode('attended')} className={`px-4 py-2 rounded-lg text-sm font-semibold ${viewMode === 'attended' ? 'bg-white text-[var(--brand-strong)]' : 'text-slate-600'}`}>
+                Attended Events
               </button>
             </div>
           </div>
@@ -446,7 +442,7 @@ export default function DashboardStudent() {
 
           <section className="pt-4">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-2xl font-bold">{viewMode === 'available' ? 'Available Events' : 'Your Events'}</h2>
+              <h2 className="text-2xl font-bold">{viewMode === 'available' ? 'Available Events' : 'Attended Events'}</h2>
               <span className="text-sm text-slate-500">{displayedEvents.length} events</span>
             </div>
 
@@ -457,8 +453,8 @@ export default function DashboardStudent() {
             {displayedEvents.length === 0 && (
               <p className="rounded-lg bg-[var(--surface-soft)] p-3 text-slate-600">
                 {viewMode === 'available'
-                  ? 'No published events found. Check back later or switch to "Your Events" to manage your created events.'
-                  : 'You have not created any events yet. Use "+ Add Event" to create one.'}
+                  ? 'No published events found. Check back later or switch to "Attended Events" to view events you have attended.'
+                  : 'You have not attended any events yet. Register for events in "Available Events" and attend to see them here.'}
               </p>
             )}
 
@@ -494,25 +490,7 @@ export default function DashboardStudent() {
                         <Link href={`/viewEvent?eventId=${ev.EventID || ev.id || ev.eventId}`} className="rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm font-semibold hover:bg-[var(--surface-soft)]">View Details</Link>
                       </>
                     ) : (
-                      <>
-                        <Link href={`/event/edit/${ev.EventID || ev.id || ev.eventId}`} className="px-3 py-2 text-sm text-slate-700 rounded-md border hover:bg-[var(--surface-soft)]">Edit</Link>
-                        <button onClick={async () => {
-                          const targetId = ev.EventID || ev.id || ev.eventId;
-                          const ok = window.confirm('Delete this event?');
-                          if (!ok) return;
-                          try {
-                            const res = await fetch(`${API_BASE_URL}/api/events/${encodeURIComponent(targetId)}?organizerId=${encodeURIComponent(userId || '')}`, {
-                              method: 'DELETE',
-                            });
-                            if (!res.ok) {
-                              throw new Error('Delete failed');
-                            }
-                            setEvents(prev => prev.filter(x => String(x.EventID || x.id || x.eventId) !== String(targetId)));
-                          } catch (_err) {
-                            window.alert('Could not delete event from server.');
-                          }
-                        }} className="px-3 py-2 text-sm text-white bg-red-600 rounded-md">Delete</button>
-                      </>
+                      <Link href={`/viewEvent?eventId=${ev.EventID || ev.id || ev.eventId}`} className="rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm font-semibold hover:bg-[var(--surface-soft)]">View Details</Link>
                     )}
                   </div>
                 </article>

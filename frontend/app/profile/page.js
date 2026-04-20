@@ -4,6 +4,7 @@ import Link from 'next/link';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 const ALLOWED_CITIES = ['Lahore', 'Islamabad', 'Karachi'];
+const YEAR_OPTIONS = [1, 2, 3, 4];
 
 const toDateInputValue = (value) => {
   if (!value) return '';
@@ -31,6 +32,7 @@ export default function ProfilePage() {
   const [dob, setDob] = useState('');
   const [email, setEmail] = useState('');
   const [institution, setInstitution] = useState('');
+  const [yearOfStudy, setYearOfStudy] = useState('1');
   const [city, setCity] = useState('Lahore');
   const [linkA, setLinkA] = useState('');
   const [linkB, setLinkB] = useState('');
@@ -82,6 +84,7 @@ export default function ProfilePage() {
     const savedId = readInitial('studentId') || userId;
     const savedDob = readInitial('dateOfBirth');
     const savedInstitution = readInitial('institution', 'FAST NUCES');
+    const savedYearOfStudy = readInitial('yearOfStudy', '1');
     const savedCity = readInitial('city', 'Lahore');
     const savedLinkA = readInitial('linkA');
     const savedLinkB = readInitial('linkB');
@@ -92,6 +95,7 @@ export default function ProfilePage() {
     setStudentId(savedId || '000000');
     setDob(savedDob || '');
     setInstitution(savedInstitution || 'FAST NUCES');
+    setYearOfStudy(savedYearOfStudy || '1');
     setCity(savedCity || 'Lahore');
     setLinkA(savedLinkA || '');
     setLinkB(savedLinkB || '');
@@ -117,6 +121,7 @@ export default function ProfilePage() {
         const resolvedEmail = data.Email || savedEmail || 'no-reply@university.edu';
         const resolvedPic = data.ProfilePictureURL || savedPic || '';
         const resolvedInstitution = data.Department || savedInstitution || 'FAST NUCES';
+        const resolvedYear = String(data.YearOfStudy || savedYearOfStudy || '1');
         const resolvedCity = data.City || savedCity || 'Lahore';
         const resolvedStudentId = String(data.UserID || userId);
         const resolvedDob = toDateInputValue(data.DateOfBirth) || savedDob || '';
@@ -127,6 +132,7 @@ export default function ProfilePage() {
         setEmail(resolvedEmail);
         setProfilePictureDataUrl(resolvedPic);
         setInstitution(resolvedInstitution);
+        setYearOfStudy(resolvedYear);
         setCity(resolvedCity);
         setStudentId(resolvedStudentId);
         setDob(resolvedDob);
@@ -137,6 +143,7 @@ export default function ProfilePage() {
         localStorage.setItem(`userEmail:${userId}`, resolvedEmail);
         localStorage.setItem(`profilePictureURL:${userId}`, resolvedPic);
         localStorage.setItem(`institution:${userId}`, resolvedInstitution);
+        localStorage.setItem(`yearOfStudy:${userId}`, resolvedYear);
         localStorage.setItem(`city:${userId}`, resolvedCity);
         localStorage.setItem(`studentId:${userId}`, resolvedStudentId);
         localStorage.setItem(`dateOfBirth:${userId}`, resolvedDob);
@@ -176,6 +183,7 @@ export default function ProfilePage() {
     setName(readScopedValue('displayName', 'Your Name'));
     setDob(readScopedValue('dateOfBirth', ''));
     setInstitution(readScopedValue('institution', 'FAST NUCES'));
+    setYearOfStudy(readScopedValue('yearOfStudy', '1'));
     setCity(readScopedValue('city', 'Lahore'));
     setLinkA(readScopedValue('linkA', ''));
     setLinkB(readScopedValue('linkB', ''));
@@ -193,6 +201,7 @@ export default function ProfilePage() {
     writeScopedValue('displayName', name);
     writeScopedValue('dateOfBirth', dob || '');
     writeScopedValue('institution', institution || '');
+    writeScopedValue('yearOfStudy', yearOfStudy || '');
     writeScopedValue('city', city || '');
     writeScopedValue('linkA', linkA || '');
     writeScopedValue('linkB', linkB || '');
@@ -219,7 +228,7 @@ export default function ProfilePage() {
           lastName,
           department: institution || null,
           city: city || null,
-          year: null,
+          year: Number.isInteger(Number(yearOfStudy)) ? Number(yearOfStudy) : null,
           dateOfBirth: dob || null,
           linkedInURL: linkA || null,
           gitHubURL: linkB || null,
@@ -296,6 +305,21 @@ export default function ProfilePage() {
 
               <FieldRow label="Department:" value={institution} editable>
                 <input disabled={!isEditing} className="rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5 w-full disabled:bg-slate-50 disabled:text-slate-500" value={institution} onChange={(e) => setInstitution(e.target.value)} />
+              </FieldRow>
+
+              <FieldRow label="Year of Study:" value={yearOfStudy} editable>
+                <select
+                  disabled={!isEditing}
+                  className="rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5 w-full disabled:bg-slate-50 disabled:text-slate-500"
+                  value={yearOfStudy}
+                  onChange={(e) => setYearOfStudy(e.target.value)}
+                >
+                  {YEAR_OPTIONS.map((yearOption) => (
+                    <option key={yearOption} value={String(yearOption)}>
+                      {yearOption}
+                    </option>
+                  ))}
+                </select>
               </FieldRow>
 
               <FieldRow label="City:" value={city} editable>

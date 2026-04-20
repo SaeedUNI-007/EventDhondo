@@ -44,6 +44,7 @@ export default function DashboardO() {
   const [selectedCity, setSelectedCity] = useState("");
   const [dateOrder, setDateOrder] = useState("asc");
   const [searchTerm, setSearchTerm] = useState("");
+  const [viewMode, setViewMode] = useState('active'); // 'active' | 'completed'
   const [removeCandidate, setRemoveCandidate] = useState("");
   const [userInterests, setUserInterests] = useState([]);
   const organizerId = typeof window !== "undefined"
@@ -217,6 +218,10 @@ export default function DashboardO() {
       return dateOrder === "asc" ? da - db : db - da;
     });
 
+  const upcomingEvents = visibleEvents.filter((ev) => ev.isCompleted !== true);
+  const completedEvents = visibleEvents.filter((ev) => ev.isCompleted === true);
+  const displayedEvents = viewMode === 'completed' ? completedEvents : upcomingEvents;
+
   // Side panel now only contains "Dashboard" (profile accessible via pencil icon)
   const NAV_ITEMS = [
     { label: 'Dashboard', href: '/dashboardO' },
@@ -307,6 +312,30 @@ export default function DashboardO() {
             <h1 className="mt-1 text-2xl font-extrabold md:text-4xl break-words">Welcome, {orgName}!</h1>
             {userEmail && <p className="mt-2 text-sm text-slate-600">Signed in as {userEmail}</p>}
           </div>
+            <div className="flex flex-col gap-3 md:items-end">
+              <Link href="/eventO" className="inline-flex items-center rounded-md bg-[var(--brand)] text-white px-4 py-2 font-semibold">
+                + Add Event
+              </Link>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <div className="inline-flex rounded-xl bg-[var(--surface-soft)] p-1">
+              <button
+                type="button"
+                onClick={() => setViewMode('active')}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold ${viewMode === 'active' ? 'bg-white text-[var(--brand-strong)]' : 'text-slate-600'}`}
+              >
+                Your Events
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('completed')}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold ${viewMode === 'completed' ? 'bg-white text-[var(--brand-strong)]' : 'text-slate-600'}`}
+              >
+                Completed Events
+              </button>
+            </div>
           </div>
         </header>
 
@@ -372,18 +401,22 @@ export default function DashboardO() {
 
           <section className="pt-4">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-2xl font-bold">Your Events</h2>
-              <span className="text-sm text-slate-500">{visibleEvents.length} events</span>
+              <h2 className="text-2xl font-bold">{viewMode === 'active' ? 'Your Events' : 'Completed Events'}</h2>
+              <span className="text-sm text-slate-500">{displayedEvents.length} events</span>
             </div>
 
             {loading && <p className="text-slate-600">Loading events...</p>}
             {error && <p className="rounded-lg bg-rose-50 p-3 text-[var(--danger)]">{error}</p>}
-            {!loading && !error && visibleEvents.length === 0 && (
-              <p className="rounded-lg bg-[var(--surface-soft)] p-3 text-slate-600">No events found. Use &quot;Add Event&quot; to create one.</p>
+            {!loading && !error && displayedEvents.length === 0 && (
+              <p className="rounded-lg bg-[var(--surface-soft)] p-3 text-slate-600">
+                {viewMode === 'active'
+                  ? 'No active events found. Use "Add Event" to create one.'
+                  : 'No completed events found yet.'}
+              </p>
             )}
 
             <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {visibleEvents.map((ev) => (
+              {displayedEvents.map((ev) => (
                 <article key={ev.EventID || ev.id || ev.eventId} className="surface-card reveal-up h-full overflow-hidden p-4 flex flex-col">
                   <div className="mb-3 flex items-center justify-between">
                     <p className="rounded-full bg-[var(--surface-soft)] px-3 py-1 text-xs font-bold text-[var(--brand-strong)]">{ev.EventType || ev.EventCategory || "Event"}</p>

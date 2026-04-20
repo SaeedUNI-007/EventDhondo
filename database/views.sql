@@ -10,7 +10,7 @@ SELECT
     e.EventID, e.Title, e.Description, e.EventType, e.EventDate, e.EventTime, e.Venue, e.City, e.Capacity, e.Status, e.PosterURL,
     o.OrganizationName AS Organizer, o.ProfilePictureURL AS OrganizerLogo,
     (SELECT TOP 1 CategoryName FROM EventCategories ec JOIN EventCategoryMapping ecm ON ec.CategoryID = ecm.CategoryID WHERE ecm.EventID = e.EventID) AS Category,
-    (e.Capacity - (SELECT COUNT(*) FROM Registrations WHERE EventID = e.EventID AND Status = 'Confirmed')) AS AvailableSeats
+    (e.Capacity - (SELECT COUNT(*) FROM Registrations WHERE EventID = e.EventID AND Status IN ('Confirmed', 'Attended'))) AS AvailableSeats
 FROM [Events] e
 JOIN [OrganizerProfiles] o ON e.OrganizerID = o.UserID
 WHERE e.Status = 'Published' AND e.EventDate >= CAST(GETDATE() AS DATE);

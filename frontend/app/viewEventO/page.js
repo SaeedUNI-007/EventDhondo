@@ -18,6 +18,10 @@ export default function ViewEventOrg() {
   const [teams, setTeams] = useState([]);
   const [loadingRegistrations, setLoadingRegistrations] = useState(false);
   const [loadingTeams, setLoadingTeams] = useState(false);
+  const [loadingResults, setLoadingResults] = useState(false);
+  const [savingResults, setSavingResults] = useState(false);
+  const [resultRows, setResultRows] = useState([]);
+  const [resultDate, setResultDate] = useState("");
   const [message, setMessage] = useState("");
   const userId = typeof window !== "undefined"
     ? (sessionStorage.getItem("userId") || sessionStorage.getItem("userID") || localStorage.getItem("userId") || localStorage.getItem("orgId") || "")
@@ -140,9 +144,50 @@ export default function ViewEventOrg() {
       }
     };
 
+    const loadResults = async () => {
+      if (!eventId) return;
+      if (!Number.isInteger(Number(userId))) {
+        setResultRows([]);
+        return;
+      }
+
+      try {
+        setLoadingResults(true);
+        const res = await fetch(`${API_BASE_URL}/api/events/${encodeURIComponent(eventId)}/results`, {
+          headers: {
+            "Content-Type": "application/json",
+            "x-user-id": String(userId),
+          },
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data?.message || `Failed to load results (${res.status})`);
+        }
+
+        const rows = Array.isArray(data?.results)
+          ? data.results.map((row) => ({
+              userId: Number(row.UserID),
+              name: `${row.FirstName || ""} ${row.LastName || ""}`.trim() || "Student",
+              email: row.Email || "-",
+              registrationStatus: row.RegistrationStatus || "-",
+              position: row.Position || "",
+              description: row.Description || "",
+            }))
+          : [];
+
+        setResultRows(rows);
+      } catch (err) {
+        setResultRows([]);
+      } finally {
+        setLoadingResults(false);
+      }
+    };
+
     loadEvent();
     loadRegistrations();
     loadTeams();
+    loadResults();
   }, [eventId, userId]);
 
   if (!eventId) return <main className="min-h-screen shell"><div className="p-6">No event specified.</div></main>;
@@ -157,6 +202,52 @@ export default function ViewEventOrg() {
   const organizerDescription = eventData.OrganizerDescription || "No organizer description available.";
   const organizerLogo = eventData.OrganizerLogo || DEFAULT_ORGANIZER_LOGO;
   const posterSrc = eventData.PosterURL || DEFAULT_EVENT_POSTER;
+  const isCompetitionEvent = (eventData.eventType || eventData.EventType || "").toLowerCase() === "competition";
+
+  async function handleSaveResults() {
+    if (!resultRows.length) {
+      setMessage("No participants available for results.");
+      return;
+    }
+
+    const results = resultRows
+      .filter((row) => String(row.position || "").trim().length > 0)
+      .map((row) => ({
+        userId: row.userId,
+        position: String(row.position).trim(),
+        description: String(row.description || "").trim() || null,
+        achievementDate: resultDate || null,
+      }));
+
+    if (!results.length) {
+      setMessage("Please enter at least one position before saving results.");
+      return;
+    }
+
+    try {
+      setSavingResults(true);
+      setMessage("");
+      const res = await fetch(`${API_BASE_URL}/api/events/${encodeURIComponent(eventId)}/results`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": String(userId),
+        },
+        body: JSON.stringify({ results }),
+      });
+
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.message || "Failed to save competition results");
+      }
+
+      setMessage(payload?.message || "Competition results saved.");
+    } catch (err) {
+      setMessage(err?.message || "Failed to save competition results.");
+    } finally {
+      setSavingResults(false);
+    }
+  }
 
   async function handleDelete() {
     if (!confirm("Delete this event?")) return;
@@ -336,7 +427,7 @@ export default function ViewEventOrg() {
               )}
             </div>
 
-            {(eventData.eventType || eventData.EventType || "").toLowerCase() === "competition" && (
+            {isCompetitionEvent && (
               <div className="mt-6">
                 <h3 className="mb-2 text-lg font-semibold">Teams Created</h3>
                 {loadingTeams ? (
@@ -383,6 +474,94 @@ export default function ViewEventOrg() {
                     ))}
                   </div>
                 )}
+
+                <div className="mt-6 rounded-xl border border-[var(--stroke)] bg-white p-4">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-lg font-semibold">Competition Results</h3>
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm text-slate-600">Result Date</label>
+                      <input
+                        type="date"
+                        value={resultDate}
+                        onChange={(e) => setResultDate(e.target.value)}
+                        className="rounded-md border border-[var(--stroke)] px-2 py-1 text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSaveResults}
+                        disabled={savingResults || loadingResults}
+                        className="rounded-md bg-[var(--brand)] px-3 py-2 text-sm font-semibold text-white disabled:opacity-70"
+                      >
+                        {savingResults ? "Saving..." : "Save Results"}
+                      </button>
+                    </div>
+                  </div>
+
+                  <p className="mb-3 text-sm text-slate-600">
+                    Enter positions like: 1st Place, 2nd Place, 3rd Place, Participant.
+                    Results can be submitted only after event completion.
+                  </p>
+
+                  {loadingResults ? (
+                    <p className="text-sm text-slate-600">Loading existing results...</p>
+                  ) : resultRows.length === 0 ? (
+                    <p className="text-sm text-slate-600">No participants available for result entry yet.</p>
+                  ) : (
+                    <div className="overflow-auto rounded-md border border-[var(--stroke)]">
+                      <table className="min-w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-slate-200 bg-slate-50 text-left text-slate-600">
+                            <th className="px-3 py-2">Student</th>
+                            <th className="px-3 py-2">Email</th>
+                            <th className="px-3 py-2">Position</th>
+                            <th className="px-3 py-2">Notes</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {resultRows.map((row) => (
+                            <tr key={`result-${row.userId}`} className="border-b border-slate-100 last:border-none">
+                              <td className="px-3 py-2">{row.name}</td>
+                              <td className="px-3 py-2">{row.email}</td>
+                              <td className="px-3 py-2">
+                                <select
+                                  value={row.position}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    setResultRows((prev) =>
+                                      prev.map((it) => (it.userId === row.userId ? { ...it, position: value } : it))
+                                    );
+                                  }}
+                                  className="w-full rounded-md border border-[var(--stroke)] px-2 py-1"
+                                >
+                                  <option value="">Select rank</option>
+                                  <option value="1st Place">1st Place</option>
+                                  <option value="2nd Place">2nd Place</option>
+                                  <option value="3rd Place">3rd Place</option>
+                                  <option value="Participant">Participant</option>
+                                  <option value="Honorable Mention">Honorable Mention</option>
+                                </select>
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="text"
+                                  value={row.description}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    setResultRows((prev) =>
+                                      prev.map((it) => (it.userId === row.userId ? { ...it, description: value } : it))
+                                    );
+                                  }}
+                                  placeholder="Optional notes"
+                                  className="w-full rounded-md border border-[var(--stroke)] px-2 py-1"
+                                />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>

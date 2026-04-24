@@ -12,7 +12,8 @@ export default function DashboardStudent() {
   const router = useRouter();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
-  const [events, setEvents] = useState([]);
+  const [allEvents, setAllEvents] = useState([]);
+  const [recommendedEvents, setRecommendedEvents] = useState([]);
   const [registeredEventIds, setRegisteredEventIds] = useState([]);
   const [registeringByEventId, setRegisteringByEventId] = useState({});
   const [actionMessage, setActionMessage] = useState('');
@@ -22,11 +23,12 @@ export default function DashboardStudent() {
   // filter state (like organizer dashboard)
   const [eventTypes, setEventTypes] = useState([]);
   const [cityOptions, setCityOptions] = useState([]);
-  const [selectedType, setSelectedType] = useState('all');
+  const [selectedType, setSelectedType] = useState('recommended');
   const [selectedCity, setSelectedCity] = useState('all');
   const [dateOrder, setDateOrder] = useState('asc'); // 'asc' | 'desc'
   const [searchTerm, setSearchTerm] = useState('');
-  const [userInterests, setUserInterests] = useState([]);
+  const [recommendationSummary, setRecommendationSummary] = useState('');
+  const [recommendationSource, setRecommendationSource] = useState('');
 
   function formatDate(value) {
     if (!value) return '';
@@ -35,32 +37,9 @@ export default function DashboardStudent() {
     return d.toLocaleDateString();
   }
 
-  // read user interests from storage (tries JSON array or comma string)
-  function readStoredInterests(userId) {
-    if (typeof window === 'undefined') return [];
-    const keys = [
-      `interests:${userId}`,
-      'userInterests',
-      'interests',
-    ];
-    for (const k of keys) {
-      const v = sessionStorage.getItem(k) || localStorage.getItem(k);
-      if (!v) continue;
-      try {
-        const parsed = JSON.parse(v);
-        if (Array.isArray(parsed)) return parsed.map(String);
-      } catch (e) {
-        // try csv
-        return v.split(',').map(s => s.trim()).filter(Boolean);
-      }
-    }
-    return [];
-  }
-
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const id = sessionStorage.getItem('userId') || sessionStorage.getItem('userID') || localStorage.getItem('userId') || localStorage.getItem('userID');
-      setUserInterests(readStoredInterests(id));
       const name = id ? (localStorage.getItem(`displayName:${id}`) || sessionStorage.getItem('displayName') || localStorage.getItem('displayName')) : (sessionStorage.getItem('displayName') || localStorage.getItem('displayName'));
       const email = id ? (localStorage.getItem(`userEmail:${id}`) || sessionStorage.getItem('userEmail') || localStorage.getItem('userEmail')) : (sessionStorage.getItem('userEmail') || localStorage.getItem('userEmail'));
       if (name) setDisplayName(name);
@@ -68,19 +47,43 @@ export default function DashboardStudent() {
 
       const loadEvents = async () => {
         try {
-          const res = await fetch(`${API_BASE_URL}/api/events`);
-          const data = await res.json();
-          if (!res.ok || !Array.isArray(data)) {
+          const headers = { 'Content-Type': 'application/json' };
+          if (id) headers['x-user-id'] = String(id);
+
+          const [allRes, recommendedRes] = await Promise.all([
+            fetch(`${API_BASE_URL}/api/events`, { headers }),
+            fetch(`${API_BASE_URL}/api/recommendations?userId=${encodeURIComponent(id || '')}&limit=50`, { headers }),
+          ]);
+
+          const allData = await allRes.json().catch(() => ([]));
+          const recommendedData = await recommendedRes.json().catch(() => ({}));
+
+          if (!allRes.ok || !Array.isArray(allData)) {
             throw new Error('Failed to load events');
           }
 
-          setEvents(data);
-          const types = Array.from(new Set(data.map(e => (e.eventType || e.EventType || 'Other')).filter(Boolean)));
-          const cities = Array.from(new Set(data.map((e) => (e.city || e.City || e.organizerCity || e.OrganizerCity || '')).filter(Boolean)));
+          const recommendedItems = Array.isArray(recommendedData?.items)
+            ? recommendedData.items
+            : (Array.isArray(recommendedData) ? recommendedData : []);
+
+          setAllEvents(allData);
+          setRecommendedEvents(recommendedItems);
+          setRecommendationSource(String(recommendedData?.source || ''));
+          setRecommendationSummary(
+            recommendedItems.length > 0
+              ? `Showing ${recommendedItems.length} recommendation${recommendedItems.length === 1 ? '' : 's'} from ${String(recommendedData?.source || 'recommendation engine')}.`
+              : 'No personalized recommendations available yet.'
+          );
+
+          const types = Array.from(new Set(allData.map(e => (e.eventType || e.EventType || 'Other')).filter(Boolean)));
+          const cities = Array.from(new Set(allData.map((e) => (e.city || e.City || e.organizerCity || e.OrganizerCity || '')).filter(Boolean)));
           setEventTypes(types);
           setCityOptions(cities);
         } catch (_err) {
-          setEvents([]);
+          setAllEvents([]);
+          setRecommendedEvents([]);
+          setRecommendationSummary('');
+          setRecommendationSource('');
           setEventTypes([]);
           setCityOptions([]);
         }
@@ -187,62 +190,28 @@ export default function DashboardStudent() {
 
   // base set according to view mode
   const baseEvents = useMemo(() => {
-    return events.filter(ev => {
-      if (viewMode === 'attended') {
+    if (viewMode === 'attended') {
+      return allEvents.filter((ev) => {
         const eventId = Number(ev.EventID || ev.id || ev.eventId);
         const registered = Number.isInteger(eventId) && registeredEventIds.includes(eventId);
         return registered && ev.isCompleted === true;
-      }
+      });
+    }
+
+    const sourceEvents = selectedType === 'recommended' ? recommendedEvents : allEvents;
+
+    return sourceEvents.filter((ev) => {
       const status = (ev.status || ev.Status || '').toString().toLowerCase();
       const published = status === 'published' || status === '';
       return published && ev.isCompleted !== true && !isOwner(ev);
     });
-  }, [events, viewMode, registeredEventIds, userId]);
-
-  // helper: check if an event matches user's interests
-  function eventMatchesInterests(ev, interests) {
-    if (!interests || interests.length === 0) return false;
-    const kws = new Set();
-    const add = (v) => {
-      if (!v) return;
-      if (Array.isArray(v)) v.forEach(x => add(x));
-      else String(v).split(',').map(s => s.trim()).filter(Boolean).forEach(s => kws.add(s.toLowerCase()));
-    };
-    add(ev.eventType || ev.EventType);
-    add(ev.title || ev.Title);
-    add(ev.description || ev.Description);
-    add(ev.tags || ev.Tags || ev.EventTags || ev.TagsString);
-    // also split description/title words
-    if (ev.title) (ev.title || '').toLowerCase().split(/\W+/).forEach(t => t && kws.add(t));
-    if (ev.description) (ev.description || '').toLowerCase().split(/\W+/).forEach(t => t && kws.add(t));
-    // now match interests as substrings against kws entries
-    const lowerInterests = interests.map(i => String(i).toLowerCase());
-    for (const interest of lowerInterests) {
-      for (const kw of kws) {
-        if (kw.includes(interest) || interest.includes(kw)) return true;
-      }
-    }
-    return false;
-  }
+  }, [allEvents, recommendedEvents, viewMode, registeredEventIds, userId, selectedType]);
 
   // apply filters: type, search, date ordering, and interest-filter by default
   const displayedEvents = useMemo(() => {
     let list = baseEvents.slice();
 
-    // determine whether user has actively searched/filtered;
-    // when active => do NOT apply interest filter (show normal search results)
-    const searchActive = Boolean(
-      (searchTerm && searchTerm.trim()) ||
-      (selectedType && selectedType !== 'all' && selectedType !== '') ||
-      (selectedCity && selectedCity !== 'all' && selectedCity !== '')
-    );
-
-    // apply interest filter only when there is at least one interest and no searchActive
-    if (!searchActive && userInterests && userInterests.length > 0) {
-      list = list.filter(ev => eventMatchesInterests(ev, userInterests));
-    }
-
-    if (selectedType && selectedType !== 'all') {
+    if (selectedType && selectedType !== 'all' && selectedType !== 'recommended') {
       list = list.filter(ev => ((ev.eventType || ev.EventType || '').toString().toLowerCase()) === selectedType.toString().toLowerCase());
     }
     if (selectedCity && selectedCity !== 'all') {
@@ -252,13 +221,19 @@ export default function DashboardStudent() {
       const q = searchTerm.trim().toLowerCase();
       list = list.filter(ev => ((ev.title || ev.Title || '') + ' ' + (ev.description || ev.Description || '')).toLowerCase().includes(q));
     }
-    list.sort((a,b) => {
+    list.sort((a, b) => {
+      if (selectedType === 'recommended') {
+        const aScore = Number(a.RecommendationScore || a.recommendationScore || 0);
+        const bScore = Number(b.RecommendationScore || b.recommendationScore || 0);
+        if (bScore !== aScore) return bScore - aScore;
+      }
+
       const ad = new Date(a.eventDate || a.EventDate || 0).getTime();
       const bd = new Date(b.eventDate || b.EventDate || 0).getTime();
       return dateOrder === 'asc' ? ad - bd : bd - ad;
     });
     return list;
-  }, [baseEvents, selectedType, selectedCity, searchTerm, dateOrder, userInterests]);
+  }, [baseEvents, selectedType, selectedCity, searchTerm, dateOrder, viewMode]);
 
   function doLogout() {
     const uid = sessionStorage.getItem('userID') || sessionStorage.getItem('userId') || localStorage.getItem('userID') || localStorage.getItem('userId');
@@ -382,6 +357,7 @@ export default function DashboardStudent() {
                       onChange={e => setSelectedType(e.target.value)}
                       className="p-2 rounded border bg-white text-sm w-[115px] shrink-0"
                     >
+                      <option value="recommended">Recommended</option>
                       <option value="all">All types</option>
                       {['Competition','Workshop','Seminar','Cultural','Sports']
                         .concat(eventTypes.filter(t => !['Competition','Workshop','Seminar','Cultural','Sports'].includes(t)))
@@ -414,7 +390,7 @@ export default function DashboardStudent() {
                     />
                     <button
                       type="button"
-                      onClick={() => { setSelectedType('all'); setSelectedCity('all'); setDateOrder('asc'); setSearchTerm(''); }}
+                      onClick={() => { setSelectedType('recommended'); setSelectedCity('all'); setDateOrder('asc'); setSearchTerm(''); }}
                       className="px-2.5 py-2 rounded border text-sm text-slate-700 hover:bg-[var(--surface-soft)] whitespace-nowrap shrink-0"
                     >
                       Reset
@@ -461,9 +437,16 @@ export default function DashboardStudent() {
             <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
               {displayedEvents.map(ev => (
                 <article key={ev.EventID || ev.id || ev.eventId} className="surface-card reveal-up h-full overflow-hidden p-4 flex flex-col">
-                  <div className="mb-3 flex items-center justify-between">
-                    <p className="rounded-full bg-[var(--surface-soft)] px-3 py-1 text-xs font-bold text-[var(--brand-strong)]">{ev.eventType || ev.EventType || "Event"}</p>
-                    <p className="text-xs font-semibold text-slate-500">{formatDate(ev.EventDate || ev.eventDate)}</p>
+                  <div className="mb-3 flex items-start justify-between gap-2">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <p className="rounded-full bg-[var(--surface-soft)] px-3 py-1 text-xs font-bold text-[var(--brand-strong)]">{ev.eventType || ev.EventType || "Event"}</p>
+                      {viewMode === 'available' && selectedType === 'recommended' && (
+                        <p className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
+                          {ev.RecommendationReason || ev.recommendationReason || 'Recommended'}
+                        </p>
+                      )}
+                    </div>
+                    <p className="shrink-0 whitespace-nowrap text-xs font-semibold text-slate-500">{formatDate(ev.EventDate || ev.eventDate)}</p>
                   </div>
                   <h3 className="min-h-[56px] text-lg font-bold text-slate-900">{ev.title || ev.Title}</h3>
                   <p className="mt-1 min-h-[48px] text-sm text-slate-600">{(ev.description || ev.Description || "").slice(0, 120)}</p>

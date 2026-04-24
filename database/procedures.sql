@@ -331,8 +331,9 @@ AS
 BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
-    BEGIN TRANSACTION;
     BEGIN TRY
+        BEGIN TRANSACTION;
+
         IF NOT EXISTS (SELECT 1 FROM [dbo].[Events] WHERE EventID = @EventID)
         BEGIN
             ROLLBACK TRANSACTION;
@@ -345,8 +346,8 @@ BEGIN
         WHERE EventID = @EventID
           AND Status <> 'Cancelled';
 
-        IF @@ROWCOUNT = 0
-        BEGIN
+                IF @@ROWCOUNT = 0
+                BEGIN
             ROLLBACK TRANSACTION;
             SELECT 'Error: Event is already cancelled.' AS Message;
             RETURN;
@@ -356,7 +357,8 @@ BEGIN
         INSERT INTO [dbo].[Notifications] (UserID, Title, Message, RelatedEventID, Status)
         SELECT UserID, 'Event Cancelled', 'The event you registered for has been cancelled.', @EventID, 'Pending'
         FROM [dbo].[Registrations]
-        WHERE EventID = @EventID AND Status = 'Confirmed';
+                WHERE EventID = @EventID
+                    AND Status <> 'Cancelled';
 
         COMMIT TRANSACTION;
         SELECT 'Success' AS Message;
@@ -463,19 +465,43 @@ CREATE PROCEDURE sp_RejectOrganizer
 AS
 BEGIN
     SET NOCOUNT ON;
+    SET XACT_ABORT ON;
     BEGIN TRY
-        -- Update both OrganizerProfiles and Users tables to 'Rejected' status
-        UPDATE OrganizerProfiles 
-        SET VerificationStatus = 'Rejected'
-        WHERE UserID = @OrganizerID;
+        BEGIN TRANSACTION;
 
-        UPDATE Users 
-        SET VerificationStatus = 'Rejected'
-        WHERE UserID = @OrganizerID;
+        IF NOT EXISTS (
+            SELECT 1
+            FROM OrganizerProfiles op
+            JOIN Users u ON u.UserID = op.UserID
+            WHERE op.UserID = @OrganizerID
+              AND u.[Role] = 'Organizer'
+              AND op.VerificationStatus = 'Pending'
+        )
+        BEGIN
+            ROLLBACK TRANSACTION;
+            SELECT 'Error: Organizer request not found or already processed.' AS Message;
+            RETURN;
+        END
 
-        SELECT 'Success' AS Message, @OrganizerID AS OrganizerID, 'Rejected' AS NewStatus;
+        -- Delete the organizer user row; OrganizerProfiles is removed by ON DELETE CASCADE.
+        DELETE FROM Users
+        WHERE UserID = @OrganizerID
+          AND [Role] = 'Organizer';
+
+        IF @@ROWCOUNT = 0
+        BEGIN
+            ROLLBACK TRANSACTION;
+            SELECT 'Error: Failed to delete organizer application.' AS Message;
+            RETURN;
+        END
+
+        COMMIT TRANSACTION;
+
+        SELECT 'Success' AS Message, @OrganizerID AS OrganizerID, 'Removed' AS NewStatus;
     END TRY
     BEGIN CATCH
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
         SELECT 'Error: ' + ERROR_MESSAGE() AS Message;
     END CATCH
 END;
@@ -527,15 +553,23 @@ BEGIN
                 AND r.Status <> 'Cancelled'
           )
     ),
+    InterestTerms AS (
+        SELECT DISTINCT
+            ui.InterestID,
+            i.InterestName
+        FROM UserInterests ui
+        JOIN Interests i ON i.InterestID = ui.InterestID
+        WHERE ui.UserID = @UserID
+    ),
     InterestMatch AS (
         SELECT
             ce.EventID,
-            COUNT(DISTINCT ui.InterestID) AS MatchedInterests
+            COUNT(DISTINCT it.InterestID) AS MatchedInterests
         FROM CandidateEvents ce
-        LEFT JOIN EventTagMapping etm ON etm.EventID = ce.EventID
-        LEFT JOIN UserInterests ui
-            ON ui.InterestID = etm.TagID
-           AND ui.UserID = @UserID
+        JOIN InterestTerms it
+          ON LOWER(ISNULL(ce.EventType, '')) LIKE '%' + LOWER(it.InterestName) + '%'
+          OR LOWER(ISNULL(ce.Title, '')) LIKE '%' + LOWER(it.InterestName) + '%'
+          OR LOWER(ISNULL(ce.Description, '')) LIKE '%' + LOWER(it.InterestName) + '%'
         GROUP BY ce.EventID
     ),
     PeerPopularity AS (

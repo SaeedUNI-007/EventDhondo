@@ -50,7 +50,7 @@ CREATE TABLE [Users] (
     [Email] NVARCHAR(100) UNIQUE NOT NULL,
     [PasswordHash] NVARCHAR(255) NOT NULL,
     [Role] NVARCHAR(10) NOT NULL CHECK ([Role] IN ('Student', 'Organizer', 'Admin')),
-    [VerificationStatus] NVARCHAR(10) NOT NULL DEFAULT 'Pending' CHECK ([VerificationStatus] IN ('Pending', 'Verified')),
+    [VerificationStatus] NVARCHAR(10) NOT NULL DEFAULT 'Pending' CHECK ([VerificationStatus] IN ('Pending', 'Verified', 'Rejected')),
     [CreatedAt] DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
     [LastLogin] DATETIMEOFFSET,
     CONSTRAINT CK_Users_EmailFormat CHECK ([Email] LIKE '%_@__%.__%')
@@ -305,6 +305,8 @@ CREATE TABLE [StudentAchievements] (
     FOREIGN KEY ([UserID]) REFERENCES [Users]([UserID]) ON DELETE CASCADE,
     FOREIGN KEY ([EventID]) REFERENCES [Events]([EventID]) ON DELETE NO ACTION
 );
+ALTER TABLE [dbo].[StudentAchievements]
+    ADD [Note] NVARCHAR(500) NULL;
 
 CREATE TABLE [Certificates] (
     [CertificateID] INT IDENTITY(1,1) PRIMARY KEY,

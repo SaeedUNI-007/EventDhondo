@@ -172,7 +172,7 @@ export default function ViewEventOrg() {
               email: row.Email || "-",
               registrationStatus: row.RegistrationStatus || "-",
               position: row.Position || "",
-              description: row.Description || "",
+              note: row.Note || row.Description || "",
             }))
           : [];
 
@@ -215,7 +215,7 @@ export default function ViewEventOrg() {
       .map((row) => ({
         userId: row.userId,
         position: String(row.position).trim(),
-        description: String(row.description || "").trim() || null,
+        note: String(row.note || "").trim() || null,
         achievementDate: resultDate || null,
       }));
 
@@ -544,14 +544,14 @@ export default function ViewEventOrg() {
                               <td className="px-3 py-2">
                                 <input
                                   type="text"
-                                  value={row.description}
+                                  value={row.note}
                                   onChange={(e) => {
                                     const value = e.target.value;
                                     setResultRows((prev) =>
-                                      prev.map((it) => (it.userId === row.userId ? { ...it, description: value } : it))
+                                      prev.map((it) => (it.userId === row.userId ? { ...it, note: value } : it))
                                     );
                                   }}
-                                  placeholder="Optional notes"
+                                  placeholder="Optional note for student"
                                   className="w-full rounded-md border border-[var(--stroke)] px-2 py-1"
                                 />
                               </td>

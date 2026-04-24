@@ -28,7 +28,203 @@ function buildDetailedMessage(row) {
 
 // helper for dev/testing: get userId from query/body fallback to 1
 function getUserIdFromReq(req) {
-  return parseInt(req.query.userId || (req.body && req.body.userId) || 1, 10);
+  return parseInt(
+    req.query.userId ||
+    (req.body && req.body.userId) ||
+    req.headers['x-user-id'] ||
+    1,
+    10
+  );
+}
+
+async function generateDueEventReminders(pool, userId) {
+  if (!Number.isInteger(userId) || userId <= 0) return;
+
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+
+  try {
+    await new sql.Request(tx)
+      .input('UserID', sql.Int, userId)
+      .query(`
+      DECLARE @LockResult INT;
+      DECLARE @LockResource NVARCHAR(128);
+      SET @LockResource = N'event-reminders-user-' + CAST(@UserID AS NVARCHAR(20));
+
+      EXEC @LockResult = sp_getapplock
+        @Resource = @LockResource,
+        @LockMode = 'Exclusive',
+        @LockOwner = 'Transaction',
+        @LockTimeout = 10000;
+
+      IF @LockResult < 0
+      BEGIN
+        THROW 50001, 'Failed to acquire event reminder lock.', 1;
+      END
+
+      ;WITH UserEvents AS (
+        SELECT DISTINCT
+          e.EventID,
+          e.Title,
+          e.EventDate,
+          e.EventTime,
+          CAST(
+            CONCAT(
+              CONVERT(VARCHAR(10), e.EventDate, 23),
+              ' ',
+              CONVERT(VARCHAR(8), CAST(ISNULL(e.EventTime, '23:59:59') AS TIME), 108)
+            ) AS DATETIME2
+          ) AS EventStart
+        FROM [dbo].[Events] e
+        WHERE LOWER(ISNULL(e.Status, '')) <> 'cancelled'
+          AND EXISTS (
+            SELECT 1
+            FROM [dbo].[Registrations] r
+            WHERE r.EventID = e.EventID
+              AND r.UserID = @UserID
+              AND LOWER(ISNULL(r.Status, '')) IN ('confirmed', 'attended')
+          )
+      )
+      INSERT INTO [dbo].[Notifications] (UserID, Title, Message, RelatedEventID, Status)
+      SELECT
+        @UserID,
+        'Event Reminder (3 days)',
+        CONCAT('Reminder: ', ue.Title, ' starts in 3 days.'),
+        ue.EventID,
+        'Pending'
+      FROM UserEvents ue
+      LEFT JOIN [dbo].[NotificationPreferences] np
+        ON np.UserID = @UserID
+       AND np.NotificationType = 'EventReminder'
+      WHERE ue.EventStart > DATEADD(DAY, 1, GETDATE())
+        AND ue.EventStart <= DATEADD(DAY, 3, GETDATE())
+        AND ISNULL(np.InAppEnabled, 1) = 1
+        AND NOT EXISTS (
+          SELECT 1
+          FROM [dbo].[Notifications] n
+          WHERE n.UserID = @UserID
+            AND n.RelatedEventID = ue.EventID
+            AND n.Title = 'Event Reminder (3 days)'
+        );
+
+      ;WITH UserEvents AS (
+        SELECT DISTINCT
+          e.EventID,
+          e.Title,
+          e.EventDate,
+          e.EventTime,
+          CAST(
+            CONCAT(
+              CONVERT(VARCHAR(10), e.EventDate, 23),
+              ' ',
+              CONVERT(VARCHAR(8), CAST(ISNULL(e.EventTime, '23:59:59') AS TIME), 108)
+            ) AS DATETIME2
+          ) AS EventStart
+        FROM [dbo].[Events] e
+        WHERE LOWER(ISNULL(e.Status, '')) <> 'cancelled'
+          AND EXISTS (
+            SELECT 1
+            FROM [dbo].[Registrations] r
+            WHERE r.EventID = e.EventID
+              AND r.UserID = @UserID
+              AND LOWER(ISNULL(r.Status, '')) IN ('confirmed', 'attended')
+          )
+      )
+      INSERT INTO [dbo].[Notifications] (UserID, Title, Message, RelatedEventID, Status)
+      SELECT
+        @UserID,
+        'Event Reminder (1 day)',
+        CONCAT('Reminder: ', ue.Title, ' starts in 1 day.'),
+        ue.EventID,
+        'Pending'
+      FROM UserEvents ue
+      LEFT JOIN [dbo].[NotificationPreferences] np
+        ON np.UserID = @UserID
+       AND np.NotificationType = 'EventReminder'
+      WHERE ue.EventStart > DATEADD(HOUR, 1, GETDATE())
+        AND ue.EventStart <= DATEADD(DAY, 1, GETDATE())
+        AND ISNULL(np.InAppEnabled, 1) = 1
+        AND NOT EXISTS (
+          SELECT 1
+          FROM [dbo].[Notifications] n
+          WHERE n.UserID = @UserID
+            AND n.RelatedEventID = ue.EventID
+            AND n.Title = 'Event Reminder (1 day)'
+        );
+
+      ;WITH UserEvents AS (
+        SELECT DISTINCT
+          e.EventID,
+          e.Title,
+          e.EventDate,
+          e.EventTime,
+          CAST(
+            CONCAT(
+              CONVERT(VARCHAR(10), e.EventDate, 23),
+              ' ',
+              CONVERT(VARCHAR(8), CAST(ISNULL(e.EventTime, '23:59:59') AS TIME), 108)
+            ) AS DATETIME2
+          ) AS EventStart
+        FROM [dbo].[Events] e
+        WHERE LOWER(ISNULL(e.Status, '')) <> 'cancelled'
+          AND EXISTS (
+            SELECT 1
+            FROM [dbo].[Registrations] r
+            WHERE r.EventID = e.EventID
+              AND r.UserID = @UserID
+              AND LOWER(ISNULL(r.Status, '')) IN ('confirmed', 'attended')
+          )
+      )
+      INSERT INTO [dbo].[Notifications] (UserID, Title, Message, RelatedEventID, Status)
+      SELECT
+        @UserID,
+        'Event Reminder (1 hour)',
+        CONCAT('Reminder: ', ue.Title, ' starts in 1 hour.'),
+        ue.EventID,
+        'Pending'
+      FROM UserEvents ue
+      LEFT JOIN [dbo].[NotificationPreferences] np
+        ON np.UserID = @UserID
+       AND np.NotificationType = 'EventReminder'
+      WHERE ue.EventStart > GETDATE()
+        AND ue.EventStart <= DATEADD(HOUR, 1, GETDATE())
+        AND ISNULL(np.InAppEnabled, 1) = 1
+        AND NOT EXISTS (
+          SELECT 1
+          FROM [dbo].[Notifications] n
+          WHERE n.UserID = @UserID
+            AND n.RelatedEventID = ue.EventID
+            AND n.Title = 'Event Reminder (1 hour)'
+        );
+
+      ;WITH RankedReminders AS (
+        SELECT
+          n.NotificationID,
+          ROW_NUMBER() OVER (
+            PARTITION BY n.UserID, n.RelatedEventID, n.Title
+            ORDER BY n.CreatedAt ASC, n.NotificationID ASC
+          ) AS rn
+        FROM [dbo].[Notifications] n
+        WHERE n.UserID = @UserID
+          AND n.Title IN (
+            'Event Reminder (3 days)',
+            'Event Reminder (1 day)',
+            'Event Reminder (1 hour)'
+          )
+      )
+      DELETE FROM RankedReminders
+      WHERE rn > 1;
+    `);
+
+    await tx.commit();
+  } catch (err) {
+    try {
+      await tx.rollback();
+    } catch (_rollbackErr) {
+      // Ignore rollback secondary errors to preserve original failure context.
+    }
+    throw err;
+  }
 }
 
 // GET /api/notifications?filter=unread|all&page=1&limit=20&userId=1
@@ -50,6 +246,9 @@ router.get('/', async (req, res) => {
   try {
     const pool = await poolPromise;
     let items = [];
+
+    // Ensure due reminders are generated before returning notification feed.
+    await generateDueEventReminders(pool, userId);
 
     try {
       const result = await pool.request()

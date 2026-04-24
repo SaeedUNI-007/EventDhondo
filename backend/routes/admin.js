@@ -553,18 +553,6 @@ router.put('/verify-organizer/:id', async (req, res) => {
                 return res.status(400).json({ success: false, message });
             }
 
-            await pool.request()
-                .input('OrganizerID', sql.Int, organizerId)
-                .query(`
-                    UPDATE OrganizerProfiles
-                    SET VerificationStatus = 'Rejected'
-                    WHERE UserID = @OrganizerID;
-
-                    UPDATE Users
-                    SET VerificationStatus = 'Rejected'
-                    WHERE UserID = @OrganizerID;
-                `);
-
             res.json({
                 success: true,
                 message,

@@ -99,8 +99,8 @@ export default function AdminEventsPage() {
         headers['x-user-id'] = userId;
       }
 
-      const res = await fetch(`${API_BASE_URL}/api/events/${encodeURIComponent(eventRow.EventID)}`, {
-        method: "DELETE",
+      const res = await fetch(`${API_BASE_URL}/api/events/${encodeURIComponent(eventRow.EventID)}/cancel`, {
+        method: "PUT",
         headers,
       });
 
@@ -108,7 +108,11 @@ export default function AdminEventsPage() {
         throw new Error("Cancel failed: " + res.status);
       }
 
-      setEvents((prev) => prev.filter((e) => Number(e.EventID) !== Number(eventRow.EventID)));
+      setEvents((prev) => prev.map((e) => (
+        Number(e.EventID) === Number(eventRow.EventID)
+          ? { ...e, Status: "Cancelled" }
+          : e
+      )));
       setNotice("Event cancelled successfully.");
     } catch (err) {
       window.alert("Cancel failed: " + err.message);

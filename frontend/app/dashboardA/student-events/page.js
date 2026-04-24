@@ -63,17 +63,21 @@ export default function AdminStudentEventsPage() {
       const headers = { "Content-Type": "application/json" };
       if (userId) headers["x-user-id"] = String(userId);
 
-      const res = await fetch(`${API_BASE_URL}/api/events/${encodeURIComponent(eventId)}`, {
-        method: "DELETE",
+      const cancelRes = await fetch(`${API_BASE_URL}/api/events/${encodeURIComponent(eventId)}/cancel`, {
+        method: "PUT",
         headers,
       });
 
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(payload?.message || `Cancel failed (${res.status})`);
+      const payload = await cancelRes.json().catch(() => ({}));
+      if (!cancelRes.ok) {
+        throw new Error(payload?.message || `Cancel failed (${cancelRes.status})`);
       }
 
-      setEvents((prev) => prev.filter((x) => Number(x.EventID) !== Number(eventId)));
+      setEvents((prev) => prev.map((x) => (
+        Number(x.EventID) === Number(eventId)
+          ? { ...x, Status: "Cancelled" }
+          : x
+      )));
       setNotice("Student event cancelled.");
     } catch (err) {
       setNotice(err?.message || "Cancel failed");

@@ -375,13 +375,18 @@ export default function AchievementsUser() {
                   {achievements.map((a, idx) => (
                     <article key={`${a.EventTitle}-${a.AchievementDate}-${idx}`} className="p-4 bg-white rounded shadow-sm">
                       <div className="flex justify-between items-start gap-3">
-                        <div>
+                        <div className="flex-1">
                           <h3 className="font-semibold">
                             {a.Position || "Participation"} • {a.EventTitle || "Event"}
                           </h3>
                           <p className="text-sm text-slate-500">
                             {asDateString(a.AchievementDate)} • {a.EventType || "Event"} • Awarded by {a.AwardedBy || "Organizer"}
                           </p>
+                          {a.Note && (
+                            <p className="text-sm text-slate-600 mt-2">
+                              <span className="font-medium">Note:</span> {a.Note}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </article>

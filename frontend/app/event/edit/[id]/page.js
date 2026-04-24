@@ -69,10 +69,12 @@ export default function EditEventPage() {
     registrationDeadline: "",
     posterURL: "",
     status: "Draft",
+    selectedSkills: [],
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [availableSkills, setAvailableSkills] = useState([]);
 
   const userId = typeof window !== "undefined"
     ? (sessionStorage.getItem("userId") || sessionStorage.getItem("userID") || localStorage.getItem("userId") || localStorage.getItem("userID") || "")
@@ -81,6 +83,22 @@ export default function EditEventPage() {
   const posterPreview = useMemo(() => {
     return form.posterURL?.trim() || "/images/default-event-poster.png";
   }, [form.posterURL]);
+
+  useEffect(() => {
+    const loadSkills = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/skills`);
+        if (res.ok) {
+          const data = await res.json();
+          setAvailableSkills(Array.isArray(data) ? data : []);
+        }
+      } catch (err) {
+        console.error('Failed to load skills:', err);
+      }
+    };
+
+    loadSkills();
+  }, []);
 
   useEffect(() => {
     const loadEvent = async () => {
@@ -103,6 +121,20 @@ export default function EditEventPage() {
         const formattedTime = toTimeInputValue(eventTimeRaw);
         const formattedDeadline = toDateTimeLocalInputValue(registrationDeadlineRaw);
 
+        // Fetch event's current skills
+        let eventSkillIds = [];
+        try {
+          const skillsRes = await fetch(`${API_BASE_URL}/api/events/${encodeURIComponent(eventId)}/skills`);
+          if (skillsRes.ok) {
+            const skillsData = await skillsRes.json();
+            eventSkillIds = Array.isArray(skillsData) 
+              ? skillsData.map(s => Number(s.SkillID || s.skillId || 0)).filter(id => id > 0)
+              : [];
+          }
+        } catch (err) {
+          console.error('Failed to load event skills:', err);
+        }
+
         setForm({
           title: data.Title || data.title || "",
           description: data.Description || data.description || "",
@@ -115,6 +147,7 @@ export default function EditEventPage() {
           registrationDeadline: formattedDeadline,
           posterURL: data.PosterURL || data.posterURL || "",
           status: data.Status || data.status || "Draft",
+          selectedSkills: eventSkillIds,
         });
       } catch (err) {
         setMessage(err?.message || "Could not load event");
@@ -129,6 +162,15 @@ export default function EditEventPage() {
   const onChange = (e) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const toggleSkill = (skillId) => {
+    setForm((prev) => ({
+      ...prev,
+      selectedSkills: prev.selectedSkills.includes(skillId)
+        ? prev.selectedSkills.filter(id => id !== skillId)
+        : [...prev.selectedSkills, skillId],
+    }));
   };
 
   const handleSave = async (e) => {
@@ -166,6 +208,7 @@ export default function EditEventPage() {
           registrationDeadline: form.registrationDeadline,
           posterURL: form.posterURL || null,
           status: form.status,
+          selectedSkills: form.selectedSkills || [],
         }),
       });
 
@@ -227,6 +270,41 @@ export default function EditEventPage() {
               <label className="block text-sm font-semibold text-slate-700">Poster URL</label>
               <input name="posterURL" value={form.posterURL} onChange={onChange} className="mt-1 w-full rounded-lg border border-[var(--stroke)] bg-white px-3 py-2" placeholder="https://..." />
               <p className="mt-1 text-xs text-slate-500">Leave empty to use /images/default-event-poster.png.</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-700">Skills</label>
+              <p className="mt-1 text-xs text-slate-500 mb-2">Select skills participants will gain from this event. Auto-detected skills are applied based on event type.</p>
+              <div className="mt-2 space-y-2 max-h-40 overflow-y-auto rounded-lg border border-[var(--stroke)] bg-white p-3">
+                {availableSkills.length > 0 ? (
+                  availableSkills.map((skill) => (
+                    <label key={skill.SkillID} className="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-1 rounded">
+                      <input
+                        type="checkbox"
+                        checked={form.selectedSkills.includes(Number(skill.SkillID))}
+                        onChange={() => toggleSkill(Number(skill.SkillID))}
+                        className="w-4 h-4 rounded border-[var(--stroke)]"
+                      />
+                      <span className="text-sm text-slate-700 flex-1">{skill.SkillName}</span>
+                      {skill.Category && <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">{skill.Category}</span>}
+                    </label>
+                  ))
+                ) : (
+                  <p className="text-xs text-slate-500 italic">Loading skills...</p>
+                )}
+              </div>
+              {form.selectedSkills.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {form.selectedSkills.map((skillId) => {
+                    const skill = availableSkills.find(s => s.SkillID === skillId);
+                    return skill ? (
+                      <span key={skillId} className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded">
+                        {skill.SkillName}
+                      </span>
+                    ) : null;
+                  })}
+                </div>
+              )}
             </div>
           </div>
 

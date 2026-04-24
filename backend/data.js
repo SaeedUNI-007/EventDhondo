@@ -11,6 +11,81 @@ const normalizeAllowedCity = (value) => {
     return match || null;
 };
 
+const DEFAULT_EVENT_SKILLS = {
+    competition: ['Problem Solving', 'Teamwork'],
+    workshop: ['Technical Learning', 'Collaboration'],
+    seminar: ['Public Speaking', 'Communication'],
+    sports: ['Sportsmanship', 'Teamwork'],
+    cultural: ['Creativity', 'Collaboration'],
+};
+
+const inferSkillCategory = (skillName) => {
+    const raw = String(skillName || '').toLowerCase();
+    if (/(speaking|communication|teamwork|collaboration|leadership)/.test(raw)) return 'Soft Skills';
+    if (/(sport|badminton|basketball|cricket)/.test(raw)) return 'Sports';
+    if (/(design|photography|creativity)/.test(raw)) return 'Arts';
+    return 'Technical';
+};
+
+const deriveEventSkills = (eventType, title, description) => {
+    const typeKey = String(eventType || '').trim().toLowerCase();
+    const text = `${eventType || ''} ${title || ''} ${description || ''}`.toLowerCase();
+    const skills = new Set(DEFAULT_EVENT_SKILLS[typeKey] || []);
+
+    if (/(coding|programming|problem)/.test(text)) skills.add('Problem Solving');
+    if (/(web|react|node|frontend|backend)/.test(text)) skills.add('Web Development');
+    if (/(ai|robotics|machine learning|ml\b)/.test(text)) skills.add('AI & Robotics');
+    if (/(security|cyber)/.test(text)) skills.add('Cyber Security');
+    if (/(public speaking|presentation|speech)/.test(text)) skills.add('Public Speaking');
+    if (/(design|graphic)/.test(text)) skills.add('Graphic Design');
+    if (/(photo|photography)/.test(text)) skills.add('Photography');
+
+    return Array.from(skills).slice(0, 5);
+};
+
+const ensureEventSkillMappings = async (pool, eventId, eventType, title, description) => {
+    if (!Number.isInteger(Number(eventId)) || Number(eventId) <= 0) return;
+
+    const skillNames = deriveEventSkills(eventType, title, description);
+    if (!skillNames.length) return;
+
+    for (const skillName of skillNames) {
+        const category = inferSkillCategory(skillName);
+        const skillResult = await pool.request()
+            .input('SkillName', sql.NVarChar(100), skillName)
+            .input('Category', sql.NVarChar(50), category)
+            .query(`
+                IF NOT EXISTS (SELECT 1 FROM [dbo].[Skills] WHERE SkillName = @SkillName)
+                BEGIN
+                    INSERT INTO [dbo].[Skills] (SkillName, Category)
+                    VALUES (@SkillName, @Category);
+                END
+
+                SELECT TOP 1 SkillID
+                FROM [dbo].[Skills]
+                WHERE SkillName = @SkillName;
+            `);
+
+        const skillId = Number(skillResult.recordset?.[0]?.SkillID);
+        if (!Number.isInteger(skillId) || skillId <= 0) continue;
+
+        await pool.request()
+            .input('EventID', sql.Int, Number(eventId))
+            .input('SkillID', sql.Int, skillId)
+            .query(`
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM [dbo].[EventSkillMapping]
+                    WHERE EventID = @EventID AND SkillID = @SkillID
+                )
+                BEGIN
+                    INSERT INTO [dbo].[EventSkillMapping] (EventID, SkillID)
+                    VALUES (@EventID, @SkillID);
+                END
+            `);
+    }
+};
+
 const extractDateParts = (value) => {
     if (!value) return null;
 
@@ -238,6 +313,18 @@ router.get('/interests', async (req, res) => {
     }
 });
 
+// ─── Route: GET /skills ───────────────────────────────────────────────────
+router.get('/skills', async (req, res) => {
+    try {
+        const pool = await poolPromise;
+        const result = await pool.request().query('SELECT SkillID, SkillName, Category FROM [dbo].[Skills] ORDER BY SkillName ASC');
+        res.status(200).json(result.recordset);
+    } catch (err) {
+        console.error('Fetch Skills Error:', err);
+        res.status(500).json({ success: false, message: 'Failed to fetch skills' });
+    }
+});
+
 // ─── Route: GET /users ─────────────────────────────────────────────────────
 router.get('/users', async (req, res) => {
     const email = req.query.email;
@@ -392,6 +479,30 @@ router.get('/events/:id', async (req, res) => {
     } catch (err) {
         console.error('Event Detail Fetch Error:', err);
         return res.status(500).json({ success: false, message: err.message || 'Failed to fetch event details' });
+    }
+});
+
+// ─── Route: GET /events/:id/skills ────────────────────────────────────────
+router.get('/events/:id/skills', async (req, res) => {
+    const eventId = Number(req.params.id);
+    if (!Number.isInteger(eventId) || eventId <= 0) {
+        return res.status(400).json({ success: false, message: 'Valid event id is required' });
+    }
+    try {
+        const pool = await poolPromise;
+        const result = await pool.request()
+            .input('EventID', sql.Int, eventId)
+            .query(`
+                SELECT s.SkillID, s.SkillName, s.Category
+                FROM [dbo].[EventSkillMapping] esm
+                JOIN [dbo].[Skills] s ON esm.SkillID = s.SkillID
+                WHERE esm.EventID = @EventID
+                ORDER BY s.SkillName ASC
+            `);
+        return res.json(result.recordset || []);
+    } catch (err) {
+        console.error('Event Skills Fetch Error:', err);
+        return res.status(500).json({ success: false, message: err.message || 'Failed to fetch event skills' });
     }
 });
 
@@ -693,7 +804,7 @@ router.get('/notifications/:userId', async (req, res) => {
 router.post('/events', authMiddleware, async (req, res) => {
     const {
         title, description, eventType, eventDate, eventTime,
-        venue, city, capacity, registrationDeadline, posterURL, status,
+        venue, city, capacity, registrationDeadline, posterURL, status, selectedSkills,
     } = req.body || {};
 
     const parsedOrganizerId = req.user?.UserID;
@@ -714,6 +825,9 @@ router.post('/events', authMiddleware, async (req, res) => {
     const normalizedDescription = description === undefined ? null : (String(description || '').trim() || null);
     const normalizedPoster = posterURL === undefined ? null : (String(posterURL || '').trim() || null);
     const normalizedStatus = String(status || 'Published').trim() || 'Published';
+    const parsedSkillIds = Array.isArray(selectedSkills)
+      ? selectedSkills.map(id => Number(id)).filter(id => Number.isInteger(id) && id > 0)
+      : [];
 
     const normalizeDateInput = (value) => {
         if (!value) return null;
@@ -809,7 +923,38 @@ router.post('/events', authMiddleware, async (req, res) => {
                         @Status, @PosterURL)
             `);
 
-        return res.status(201).json({ success: true, event: result.recordset?.[0] || null });
+        const createdEvent = result.recordset?.[0] || null;
+        const newEventId = Number(createdEvent?.EventID);
+
+        // Handle skill mappings: if selectedSkills provided, use those; otherwise auto-map
+        if (parsedSkillIds.length > 0) {
+            for (const skillId of parsedSkillIds) {
+                await pool.request()
+                    .input('EventID', sql.Int, newEventId)
+                    .input('SkillID', sql.Int, skillId)
+                    .query(`
+                        IF NOT EXISTS (
+                            SELECT 1
+                            FROM [dbo].[EventSkillMapping]
+                            WHERE EventID = @EventID AND SkillID = @SkillID
+                        )
+                        BEGIN
+                            INSERT INTO [dbo].[EventSkillMapping] (EventID, SkillID)
+                            VALUES (@EventID, @SkillID);
+                        END
+                    `);
+            }
+        } else {
+            await ensureEventSkillMappings(
+                pool,
+                newEventId,
+                normalizedType,
+                normalizedTitle,
+                normalizedDescription
+            );
+        }
+
+        return res.status(201).json({ success: true, event: createdEvent });
     } catch (err) {
         console.error('Create Event Error:', err);
         if (err?.number === 547)
@@ -969,7 +1114,7 @@ router.put('/events/:id', authMiddleware, async (req, res) => {
     if (!requesterId) return res.status(401).json({ success: false, message: 'Authentication required' });
     if (!Number.isInteger(eventId) || eventId <= 0) return res.status(400).json({ success: false, message: 'Invalid event id' });
 
-    const { title, description, eventType, eventDate, eventTime, venue, city, capacity, registrationDeadline, posterURL, status } = req.body || {};
+    const { title, description, eventType, eventDate, eventTime, venue, city, capacity, registrationDeadline, posterURL, status, selectedSkills } = req.body || {};
     const normalizeDate = (v) => { if (!v) return null; const p = new Date(v); return Number.isNaN(p.getTime()) ? null : p.toISOString().slice(0,10); };
     const normalizeTime = (v) => { if (!v) return null; const raw = String(v).trim().toLowerCase(); const hhmm = raw.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/); if (hhmm) { const h = Number(hhmm[1]), m = Number(hhmm[2]), s = Number(hhmm[3]||0); if (h>23||m>59||s>59) return null; return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`; } return null; };
 
@@ -984,6 +1129,9 @@ router.put('/events/:id', authMiddleware, async (req, res) => {
     const normalizedStatus = String(status||'').trim()||'Draft';
     const normalizedPoster = String(posterURL||'').trim()||null;
     const normalizedDeadline = registrationDeadline ? new Date(registrationDeadline) : null;
+    const parsedSkillIds = Array.isArray(selectedSkills)
+      ? selectedSkills.map(id => Number(id)).filter(id => Number.isInteger(id) && id > 0)
+      : [];
 
     if (!normalizedTitle||!normalizedType||!normalizedDate||!normalizedTime) return res.status(400).json({ success: false, message: 'title, eventType, eventDate and eventTime are required' });
     if (!Number.isInteger(parsedCapacity)||parsedCapacity<=0) return res.status(400).json({ success: false, message: 'capacity must be greater than 0' });
@@ -1020,6 +1168,39 @@ router.put('/events/:id', authMiddleware, async (req, res) => {
                 WHERE EventID = @EventID;
                 SELECT TOP 1 * FROM Events WHERE EventID = @EventID;
             `);
+
+        // Handle skill mappings: if selectedSkills provided, replace existing mappings
+        if (parsedSkillIds.length > 0) {
+            await pool.request()
+                .input('EventID', sql.Int, eventId)
+                .query(`DELETE FROM [dbo].[EventSkillMapping] WHERE EventID = @EventID`);
+            
+            for (const skillId of parsedSkillIds) {
+                await pool.request()
+                    .input('EventID', sql.Int, eventId)
+                    .input('SkillID', sql.Int, skillId)
+                    .query(`
+                        IF NOT EXISTS (
+                            SELECT 1
+                            FROM [dbo].[EventSkillMapping]
+                            WHERE EventID = @EventID AND SkillID = @SkillID
+                        )
+                        BEGIN
+                            INSERT INTO [dbo].[EventSkillMapping] (EventID, SkillID)
+                            VALUES (@EventID, @SkillID);
+                        END
+                    `);
+            }
+        } else {
+            // If no skills selected, still run auto-mapping
+            await ensureEventSkillMappings(
+                pool,
+                eventId,
+                normalizedType,
+                normalizedTitle,
+                normalizedDescription
+            );
+        }
 
         return res.json({ success: true, event: result.recordset?.[0] || null });
     } catch (err) {
@@ -1330,7 +1511,8 @@ router.get('/events/:eventId/results', authMiddleware, async (req, res) => {
                     sa.AchievementID,
                     sa.Position,
                     sa.AchievementDate,
-                    sa.Description
+                    sa.Description,
+                    sa.Note
                 FROM [dbo].[Registrations] r
                 JOIN [dbo].[Users] u ON u.UserID = r.UserID
                 LEFT JOIN [dbo].[StudentProfiles] sp ON sp.UserID = r.UserID
@@ -1414,6 +1596,7 @@ router.post('/events/:eventId/results', authMiddleware, async (req, res) => {
                 userId: Number(entry?.userId),
                 position: String(entry?.position || '').trim(),
                 description: entry?.description === undefined ? null : (String(entry.description || '').trim() || null),
+                note: entry?.note === undefined ? null : (String(entry.note || '').trim().slice(0, 500) || null),
                 achievementDate: entry?.achievementDate ? new Date(entry.achievementDate) : new Date(),
             }))
             .filter((entry) => Number.isInteger(entry.userId) && entry.userId > 0 && entry.position.length > 0);
@@ -1459,11 +1642,13 @@ router.post('/events/:eventId/results', authMiddleware, async (req, res) => {
                         .input('Position', sql.NVarChar(50), entry.position)
                         .input('AchievementDate', sql.Date, entry.achievementDate)
                         .input('Description', sql.NVarChar(sql.MAX), entry.description)
+                        .input('Note', sql.NVarChar(500), entry.note)
                         .query(`
                             UPDATE [dbo].[StudentAchievements]
                             SET Position = @Position,
                                 AchievementDate = @AchievementDate,
-                                Description = @Description
+                                Description = @Description,
+                                Note = @Note
                             WHERE AchievementID = @AchievementID
                         `);
                 } else {
@@ -1473,9 +1658,10 @@ router.post('/events/:eventId/results', authMiddleware, async (req, res) => {
                         .input('Position', sql.NVarChar(50), entry.position)
                         .input('AchievementDate', sql.Date, entry.achievementDate)
                         .input('Description', sql.NVarChar(sql.MAX), entry.description)
+                        .input('Note', sql.NVarChar(500), entry.note)
                         .query(`
-                            INSERT INTO [dbo].[StudentAchievements] (UserID, EventID, Position, AchievementDate, Description)
-                            VALUES (@UserID, @EventID, @Position, @AchievementDate, @Description)
+                            INSERT INTO [dbo].[StudentAchievements] (UserID, EventID, Position, AchievementDate, Description, Note)
+                            VALUES (@UserID, @EventID, @Position, @AchievementDate, @Description, @Note)
                         `);
                 }
             }
@@ -1662,7 +1848,8 @@ const loadPortfolioData = async (targetUserId) => {
                     sa.Position,
                     sa.AchievementDate,
                     e.EventType,
-                    o.OrganizationName AS AwardedBy
+                    o.OrganizationName AS AwardedBy,
+                    sa.Note
                 FROM StudentAchievements sa
                 JOIN Events e ON sa.EventID = e.EventID
                 JOIN OrganizerProfiles o ON e.OrganizerID = o.UserID
@@ -1705,7 +1892,8 @@ const loadPortfolioData = async (targetUserId) => {
                         ELSE CAST(0 AS BIT)
                     END AS IsCompleted,
                     sa.Position,
-                    sa.Description AS AchievementDescription
+                    sa.Description AS AchievementDescription,
+                    sa.Note
                 FROM [dbo].[Registrations] r
                 JOIN [dbo].[Events] e ON e.EventID = r.EventID
                 LEFT JOIN [dbo].[Attendance] a ON a.RegistrationID = r.RegistrationID
@@ -1868,6 +2056,20 @@ router.get('/recommendations', async (req, res) => {
     const limit = Math.min(Math.max(Number(req.query.limit || 10), 1), 50);
     const pool = await poolPromise;
 
+        try {
+            const spResult = await pool.request()
+                .input('UserID', sql.Int, userId)
+                .input('TopN', sql.Int, limit)
+                .execute('dbo.sp_GetRecommendedEvents');
+
+            const spItems = spResult.recordset || [];
+            if (spItems.length > 0) {
+                    return res.json({ success: true, source: 'procedure', items: spItems });
+            }
+        } catch (_spErr) {
+            // Fall back to the legacy recommendation query below.
+        }
+
     // fetch user interests
     const interestRows = await pool.request()
       .input('UserID', sql.Int, userId)
@@ -1882,16 +2084,25 @@ router.get('/recommendations', async (req, res) => {
     if (interests.length === 0) {
       // fallback: return popular upcoming events when no interests
       const popular = await pool.request()
+                .input('UserID', sql.Int, userId)
         .input('Limit', sql.Int, limit)
         .query(`
           SELECT TOP (@Limit)
             e.EventID, e.Title, e.Description, e.EventType, e.EventDate, e.EventTime, e.Venue, e.City, e.PosterURL, op.OrganizationName AS Organizer
           FROM Events e
           LEFT JOIN OrganizerProfiles op ON op.UserID = e.OrganizerID
-          WHERE e.Status = 'Published' AND (e.EventDate IS NULL OR e.EventDate >= CONVERT(date, GETDATE()))
+                    WHERE e.Status = 'Published'
+                        AND (e.EventDate IS NULL OR e.EventDate >= CONVERT(date, GETDATE()))
+                        AND NOT EXISTS (
+                            SELECT 1
+                            FROM Registrations r
+                            WHERE r.EventID = e.EventID
+                                AND r.UserID = @UserID
+                                AND r.Status <> 'Cancelled'
+                        )
           ORDER BY e.EventDate ASC, e.EventTime ASC
         `);
-      return res.json({ success: true, items: popular.recordset || [] });
+            return res.json({ success: true, source: 'popular', items: popular.recordset || [] });
     }
 
     // build WHERE clauses using parameterized LIKEs
@@ -1900,7 +2111,7 @@ router.get('/recommendations', async (req, res) => {
     interests.forEach((term, i) => {
       const p = `%${term.replace(/[%_]/g, '\\$&')}%`;
       // add three checks per interest: EventType, Title, Description (and Tags if column exists)
-      request.input(`q${i}_type`, sql.NVarChar(200), term);
+            request.input(`q${i}_type`, sql.NVarChar(200), term);
       request.input(`q${i}_like`, sql.NVarChar(4000), p);
       likeClauses.push(`LOWER(ISNULL(e.EventType,'')) = LOWER(@q${i}_type)`);
       likeClauses.push(`LOWER(e.Title) LIKE LOWER(@q${i}_like) ESCAPE '\\'`);
@@ -1909,20 +2120,54 @@ router.get('/recommendations', async (req, res) => {
 
     const whereMatch = likeClauses.length ? `(${likeClauses.join(' OR ')})` : '1=0';
 
-    const sqlText = `
-      SELECT TOP (@Limit)
-        DISTINCT e.EventID, e.Title, e.Description, e.EventType, e.EventDate, e.EventTime, e.Venue, e.City, e.PosterURL, op.OrganizationName AS Organizer
+        const sqlText = `
+            SELECT DISTINCT TOP (@Limit)
+                e.EventID, e.Title, e.Description, e.EventType, e.EventDate, e.EventTime, e.Venue, e.City, e.PosterURL, op.OrganizationName AS Organizer
       FROM Events e
       LEFT JOIN OrganizerProfiles op ON op.UserID = e.OrganizerID
-      WHERE e.Status = 'Published'
+            WHERE e.Status = 'Published'
         AND (e.EventDate IS NULL OR e.EventDate >= CONVERT(date, GETDATE()))
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM Registrations r
+                    WHERE r.EventID = e.EventID
+                        AND r.UserID = @UserID
+                        AND r.Status <> 'Cancelled'
+                )
         AND ${whereMatch}
       ORDER BY e.EventDate ASC, e.EventTime ASC
     `;
 
+    request.input('UserID', sql.Int, userId);
     request.input('Limit', sql.Int, limit);
     const result = await request.query(sqlText);
-    return res.json({ success: true, items: result.recordset || [] });
+
+        const matchedItems = result.recordset || [];
+        if (matchedItems.length > 0) {
+            return res.json({ success: true, source: 'interest-match', items: matchedItems });
+        }
+
+        const popularFallback = await pool.request()
+            .input('UserID', sql.Int, userId)
+            .input('Limit', sql.Int, limit)
+            .query(`
+                SELECT TOP (@Limit)
+                    e.EventID, e.Title, e.Description, e.EventType, e.EventDate, e.EventTime, e.Venue, e.City, e.PosterURL, op.OrganizationName AS Organizer
+                FROM Events e
+                LEFT JOIN OrganizerProfiles op ON op.UserID = e.OrganizerID
+                WHERE e.Status = 'Published'
+                    AND (e.EventDate IS NULL OR e.EventDate >= CONVERT(date, GETDATE()))
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM Registrations r
+                        WHERE r.EventID = e.EventID
+                            AND r.UserID = @UserID
+                            AND r.Status <> 'Cancelled'
+                    )
+                ORDER BY e.EventDate ASC, e.EventTime ASC
+            `);
+
+        return res.json({ success: true, source: 'popular-fallback', items: popularFallback.recordset || [] });
   } catch (err) {
     console.error('Recommendations Error:', err);
     return res.status(500).json({ success: false, message: err.message || 'Failed to fetch recommendations' });

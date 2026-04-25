@@ -17,6 +17,23 @@ export default function Login() {
     e.preventDefault();
     setError('');
 
+    // Validate email and password exist
+    if (!email || !password) {
+      setError('Email and password are required.');
+      return;
+    }
+
+    // Validate password length: 8-255 characters
+    if (password.length < 8) {
+      setError('Password too short');
+      return;
+    }
+
+    if (password.length > 255) {
+      setError('Password too long');
+      return;
+    }
+
     try {
       // Action: Call POST /api/auth/login 
       const response = await fetch(`${API_BASE_URL}/api/auth/login`, {

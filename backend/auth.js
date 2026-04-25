@@ -64,11 +64,48 @@ router.post('/register', async (req, res) => {
         });
     }
 
+    // Validate password length: 8-255 characters
+    if (password.length < 8) {
+        return res.status(400).json({
+            success: false,
+            message: 'Password too short',
+        });
+    }
+
+    if (password.length > 255) {
+        return res.status(400).json({
+            success: false,
+            message: 'Password too long',
+        });
+    }
+
     if (!isOrganizer) {
         if (!studentFirstName) {
             return res.status(400).json({
                 success: false,
                 message: 'firstName is required for student registration',
+            });
+        }
+
+        // Validate firstName and lastName length: 2-50 characters each
+        if (studentFirstName.length < 2) {
+            return res.status(400).json({
+                success: false,
+                message: 'Name too short',
+            });
+        }
+
+        if (studentFirstName.length > 50) {
+            return res.status(400).json({
+                success: false,
+                message: 'Name too long',
+            });
+        }
+
+        if (studentLastName.length > 50) {
+            return res.status(400).json({
+                success: false,
+                message: 'Name too long',
             });
         }
 
@@ -255,6 +292,21 @@ router.post('/login', async (req, res) => {
 
     if (!normalizedEmail || !password) {
         return res.status(400).json({ success: false, message: 'email and password are required' });
+    }
+
+    // Validate password length: 8-255 characters
+    if (password.length < 8) {
+        return res.status(400).json({
+            success: false,
+            message: 'Password too short',
+        });
+    }
+
+    if (password.length > 255) {
+        return res.status(400).json({
+            success: false,
+            message: 'Password too long',
+        });
     }
 
     // Validation: Only allow @edu.pk

@@ -137,9 +137,36 @@ export default function Register() {
       return;
     }
 
+    // Validate password length: 8-255 characters
+    if (password.length < 8) {
+      setError('Password too short');
+      return;
+    }
+
+    if (password.length > 255) {
+      setError('Password too long');
+      return;
+    }
+
     if (role === 'student') {
       if (!firstName.trim() || !lastName.trim()) {
         setError('First name and last name are required for students.');
+        return;
+      }
+
+      // Validate firstName and lastName length: 2-50 characters each
+      if (firstName.trim().length < 2) {
+        setError('Name too short');
+        return;
+      }
+
+      if (firstName.trim().length > 50) {
+        setError('Name too long');
+        return;
+      }
+
+      if (lastName.trim().length > 50) {
+        setError('Name too long');
         return;
       }
 
@@ -256,29 +283,29 @@ export default function Register() {
             {role === 'student' ? (
               <>
                 <div>
-                  <label className="mb-1 block text-sm font-semibold text-slate-700">First Name</label>
+                  <label className="mb-1 block text-sm font-semibold text-slate-700">First Name <span className="text-red-500">*</span></label>
                   <input className="w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5" type="text" placeholder="First Name" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-semibold text-slate-700">Last Name</label>
+                  <label className="mb-1 block text-sm font-semibold text-slate-700">Last Name <span className="text-red-500">*</span></label>
                   <input className="w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5" type="text" placeholder="Last Name" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
                 </div>
               </>
             ) : (
               <>
                 <div>
-                  <label className="mb-1 block text-sm font-semibold text-slate-700">Organization Name</label>
+                  <label className="mb-1 block text-sm font-semibold text-slate-700">Organization Name <span className="text-red-500">*</span></label>
                   <input className="w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5" type="text" placeholder="Organization Name" value={organizationName} onChange={(e) => setOrganizationName(e.target.value)} required />
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-semibold text-slate-700">Contact Email</label>
+                  <label className="mb-1 block text-sm font-semibold text-slate-700">Contact Email <span className="text-red-500">*</span></label>
                   <input className="w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5" type="email" placeholder="Contact Email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} required />
                 </div>
               </>
             )}
           </div>
 
-          <label className="mt-3 block text-sm font-semibold text-slate-700">City</label>
+          <label className="mt-3 block text-sm font-semibold text-slate-700">City <span className="text-red-500">*</span></label>
           <select
             className="mt-1 w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5"
             value={role === 'student' ? studentCity : organizerCity}
@@ -290,10 +317,10 @@ export default function Register() {
             ))}
           </select>
 
-          <label className="mt-3 block text-sm font-semibold text-slate-700">University E-mail</label>
+          <label className="mt-3 block text-sm font-semibold text-slate-700">University E-mail <span className="text-red-500">*</span></label>
           <input className="mt-1 w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5" type="email" placeholder="University Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
 
-          <label className="mb-1 mt-3 block text-sm font-semibold text-slate-700">Password</label>
+          <label className="mb-1 mt-3 block text-sm font-semibold text-slate-700">Password <span className="text-red-500">*</span></label>
           <input className="mb-3 mt-1 w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
 
           {role === 'student' && (
@@ -310,7 +337,7 @@ export default function Register() {
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-sm font-semibold text-slate-700">Academic Year</label>
+                  <label className="mb-1 block text-sm font-semibold text-slate-700">Academic Year <span className="text-red-500">*</span></label>
                   <input className="w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5" type="number" min="1" max="8" value={yearOfStudy} onChange={(e) => setYearOfStudy(e.target.value)} placeholder="Enter numeric year (e.g., 1 for 1st year)" />
                   <p className="mt-1 text-xs text-slate-500">Enter numeric year of your program (for multi-year degrees enter the year number)</p>
                 </div>

@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import ConfirmModal from '@/components/ConfirmModal';
-
+import DashboardTourO from '@/components/DashboardTourO';
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
 // default event type options (from schema EventType)
@@ -224,12 +224,12 @@ export default function DashboardO() {
 
   // Side panel now only contains "Dashboard" (profile accessible via pencil icon)
   const NAV_ITEMS = [
-    { label: 'Dashboard', href: '/dashboardO' },
-    { label: 'Add Event', href: '/eventO' },
-    { label: 'Attendance', href: '/attendanceO' },
-    { label: 'Remove Event', href: '/removeEventO' },
-    { label: 'Requests', href: '/requestsO' },
-    { label: 'Notifications', href: '/notifications' },
+    { label: 'Dashboard',    href: '/dashboardO',   tourId: 'tour-nav-dashboard'   },
+    { label: 'Add Event',    href: '/eventO',        tourId: 'tour-nav-addevent'    },
+    { label: 'Attendance',   href: '/attendanceO',   tourId: 'tour-nav-attendance'  },
+    { label: 'Remove Event', href: '/removeEventO',  tourId: 'tour-nav-removeevent' },
+    { label: 'Requests',     href: '/requestsO',     tourId: 'tour-nav-requests'    },
+    { label: 'Notifications',href: '/notifications', tourId: 'tour-nav-notifications'},
   ];
 
   const SidePanelContent = ({ compact = false }) => {
@@ -242,7 +242,7 @@ export default function DashboardO() {
       : "";
     return (
       <div className={`flex flex-col ${compact ? "items-start p-3" : "items-center py-8 px-6"} h-full`}>
-        <div className="w-full flex items-center justify-between mb-6">
+        <div className="w-full flex items-center justify-between mb-6" id="tour-profile">
           <div className="flex items-center gap-4">
             <div className="h-16 w-16 rounded-full overflow-hidden bg-white/10 flex items-center justify-center">
               {profilePic ? (
@@ -271,7 +271,7 @@ export default function DashboardO() {
           <ul className="space-y-2">
             {NAV_ITEMS.map((item) => (
               <li key={item.href}>
-                <Link href={item.href} className="block w-full text-left rounded-md px-4 py-3 text-sm font-medium text-white hover:bg-white/10">
+                <Link href={item.href} id={item.tourId} className="sidebar-nav-link">
                   <span className="flex items-center justify-between gap-2">
                     <span>{item.label}</span>
                     {item.href === '/notifications' && <SidebarNotificationBell />}
@@ -297,6 +297,7 @@ export default function DashboardO() {
   return (
     <main className="min-h-screen px-0 py-8">
       <AuthGuard />
+      <DashboardTourO organizerId={organizerId} />
       <ConfirmModal
         open={showLogoutModal}
         title="Log out"
@@ -313,14 +314,14 @@ export default function DashboardO() {
             {userEmail && <p className="mt-2 text-sm text-slate-600">Signed in as {userEmail}</p>}
           </div>
             <div className="flex flex-col gap-3 md:items-end">
-              <Link href="/eventO" className="inline-flex items-center rounded-md bg-[var(--brand)] text-white px-4 py-2 font-semibold">
-                + Add Event
-              </Link>
+              <Link href="/eventO" id="tour-add-event-btn" className="dashboard-button inline-flex items-center rounded-md bg-[var(--brand)] text-white px-4 py-2 font-semibold">
+                 + Add Event
+               </Link>
             </div>
           </div>
 
           <div className="mt-4">
-            <div className="inline-flex rounded-xl bg-[var(--surface-soft)] p-1">
+            <div id="tour-view-toggle" className="inline-flex rounded-xl bg-[var(--surface-soft)] p-1">
               <button
                 type="button"
                 onClick={() => setViewMode('active')}
@@ -341,7 +342,7 @@ export default function DashboardO() {
 
         {/* filter controls aligned left below welcome bar */}
         <div className="mx-auto max-w-[1200px] lg:ml-80 px-4 mb-4">
-          <div className="glass rounded-2xl p-4 md:p-5">
+          <div id="tour-event-filters" className="glass rounded-2xl p-4 md:p-5">
             <div className="grid gap-3 md:grid-cols-4">
               <div className="flex flex-col gap-1">
                 <label className="text-sm font-medium text-slate-700">Search</label>
@@ -383,7 +384,7 @@ export default function DashboardO() {
 
         {/* Permanent left column attached to page edge for md+ (matches student) */}
         <div className="hidden lg:block">
-          <aside className="fixed left-0 top-0 h-screen w-80 bg-[linear-gradient(180deg,#0f766e,#34d399)] border-r border-[var(--stroke)] z-10">
+          <aside id="tour-sidebar" className="fixed left-0 top-0 h-screen w-80 bg-[linear-gradient(180deg,#0f766e,#34d399)] border-r border-[var(--stroke)] z-10">
             <div className="sticky top-6 h-[calc(100vh-48px)] overflow-hidden">
               <SidePanelContent />
             </div>
@@ -415,7 +416,7 @@ export default function DashboardO() {
               </p>
             )}
 
-            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div id="tour-event-cards" className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
               {displayedEvents.map((ev) => (
                 <article key={ev.EventID || ev.id || ev.eventId} className="surface-card reveal-up h-full overflow-hidden p-4 flex flex-col">
                   <div className="mb-3 flex items-center justify-between">
@@ -427,8 +428,8 @@ export default function DashboardO() {
                   <p className="mt-2 text-sm text-slate-600">{ev.Venue || ev.venue}</p>
                   <p className="mt-1 text-sm text-slate-600">{ev.City || ev.city || 'City not specified'}</p>
                   <div className="mt-auto pt-4 flex gap-2">
-                    <Link href={`/viewEventO?eventId=${ev.EventID || ev.id || ev.eventId || ""}`} className="cta px-3 py-2 text-sm font-semibold">View</Link>
-                    <Link href={`/event/edit/${ev.EventID || ev.id || ev.eventId || ""}`} className="rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm font-semibold hover:bg-[var(--surface-soft)]">Edit</Link>
+                    <Link href={`/viewEventO?eventId=${ev.EventID || ev.id || ev.eventId || ""}`} className="dashboard-button cta px-3 py-2 text-sm font-semibold">View</Link>
+                    <Link href={`/event/edit/${ev.EventID || ev.id || ev.eventId || ""}`} className="dashboard-button rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm font-semibold hover:bg-[var(--surface-soft)]">Edit</Link>
                   </div>
                 </article>
               ))}

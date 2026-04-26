@@ -147,3 +147,202 @@ h4 {
 
 /* Notification dropdown fine-tune */
 .notification-dropdown { box-shadow: 0 10px 30px rgba(6,30,30,0.12); }
+
+/* ─── Dashboard Tour (driver.js) custom styles ─── */
+.dashboard-tour-popover {
+  background: #ffffff;
+  border: 1px solid var(--stroke);
+  border-radius: 1rem;
+  box-shadow: 0 24px 56px rgba(13, 39, 39, 0.18);
+  padding: 1.25rem 1.5rem 1rem;
+  max-width: 300px;
+  font-family: var(--font-manrope), sans-serif;
+}
+
+.dashboard-tour-popover .driver-popover-title {
+  font-family: var(--font-sora), sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--foreground);
+  letter-spacing: -0.02em;
+  margin-bottom: 0.4rem;
+}
+
+.dashboard-tour-popover .driver-popover-description {
+  font-size: 0.875rem;
+  color: #4b5563;
+  line-height: 1.6;
+  margin-bottom: 1rem;
+}
+
+.dashboard-tour-popover .driver-popover-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-top: 1px solid var(--stroke);
+  padding-top: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.dashboard-tour-popover .driver-popover-progress-text {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.dashboard-tour-popover .driver-popover-btn-disabled {
+  display: none !important;
+}
+
+.dashboard-tour-popover button {
+  font-family: var(--font-manrope), sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.4rem 0.85rem;
+  border-radius: 0.5rem;
+  border: none;
+  cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.dashboard-tour-popover .driver-popover-prev-btn {
+  background: var(--surface-soft);
+  color: var(--foreground);
+}
+
+.dashboard-tour-popover .driver-popover-prev-btn:hover {
+  background: var(--stroke);
+}
+
+.dashboard-tour-popover .driver-popover-next-btn,
+.dashboard-tour-popover .driver-popover-done-btn {
+  background: linear-gradient(135deg, var(--brand), var(--brand-strong));
+  color: #ffffff;
+}
+
+.dashboard-tour-popover .driver-popover-next-btn:hover,
+.dashboard-tour-popover .driver-popover-done-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(12, 109, 105, 0.30);
+}
+
+.dashboard-tour-popover .driver-popover-close-btn {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  background: transparent;
+  border: none;
+  color: #9ca3af;
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  line-height: 1;
+  border-radius: 0.25rem;
+}
+
+.dashboard-tour-popover .driver-popover-close-btn:hover {
+  color: var(--foreground);
+  background: var(--surface-soft);
+}
+
+.dashboard-button {
+  transition: transform 220ms cubic-bezier(.2,.8,.2,1), box-shadow 220ms;
+  will-change: transform;
+  display: flex !important;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  cursor: pointer;
+  transform-origin: center center;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+.dashboard-button:hover,
+.dashboard-button:focus {
+  transform: scale(1.06);
+  z-index: 20;
+  box-shadow: 0 10px 28px rgba(2,6,23,0.10);
+  outline: none;
+}
+
+/* Sidebar navigation links — separate from card buttons */
+.sidebar-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: rgba(255,255,255,0.88);
+  cursor: pointer;
+  transition:
+    background 200ms ease,
+    color 200ms ease,
+    transform 200ms cubic-bezier(.2,.8,.2,1),
+    box-shadow 200ms ease;
+  will-change: transform;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  position: relative;
+}
+
+.sidebar-nav-link::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%) scaleY(0);
+  width: 3px;
+  height: 60%;
+  border-radius: 0 3px 3px 0;
+  background: #fff;
+  transition: transform 200ms ease, opacity 200ms ease;
+  opacity: 0;
+}
+
+.sidebar-nav-link:hover,
+.sidebar-nav-link:focus {
+  background: rgba(255,255,255,0.15);
+  color: #ffffff;
+  transform: translateX(4px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  outline: none;
+}
+
+.sidebar-nav-link:hover::before,
+.sidebar-nav-link:focus::before {
+  transform: translateY(-50%) scaleY(1);
+  opacity: 1;
+}
+
+.sidebar-nav-link:active {
+  transform: translateX(2px);
+  background: rgba(255,255,255,0.22);
+}
+
+/* keep pointer events / touch friendly on mobile */
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-button,
+  .dashboard-button:hover,
+  .dashboard-button:focus {
+    transition: none;
+    transform: none;
+    box-shadow: none;
+  }
+
+  .sidebar-nav-link,
+  .sidebar-nav-link:hover,
+  .sidebar-nav-link:focus {
+    transition: background 200ms ease, color 200ms ease;
+    transform: none;
+    box-shadow: none;
+  }
+
+  .sidebar-nav-link::before {
+    transition: none;
+  }
+}

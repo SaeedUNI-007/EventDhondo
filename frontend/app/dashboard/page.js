@@ -5,7 +5,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import ConfirmModal from '@/components/ConfirmModal';
-
+import DashboardTour from '@/components/DashboardTour';
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 export default function DashboardStudent() {
@@ -119,13 +119,13 @@ export default function DashboardStudent() {
   }, []);
 
   const NAV_ITEMS = [
-    { label: 'Dashboard', href: '/dashboard' },
-    { label: 'QR Code', href: '/qr-code' },
-    { label: 'Achievements', href: '/achievementsU' },
-    { label: 'Add Event', href: '/event' },
-    { label: 'Remove Event', href: '/removeEvent' },
-    { label: 'Requests', href: '/requestsU' },
-    { label: 'Notifications', href: '/notifications' },
+    { label: 'Dashboard',    href: '/dashboard',     tourId: 'tour-nav-dashboard'    },
+    { label: 'QR Code',      href: '/qr-code',       tourId: 'tour-nav-qr'           },
+    { label: 'Achievements', href: '/achievementsU', tourId: 'tour-nav-achievements' },
+    { label: 'Add Event',    href: '/event',         tourId: 'tour-nav-addevent'     },
+    { label: 'Remove Event', href: '/removeEvent',   tourId: 'tour-nav-removeevent'  },
+    { label: 'Requests',     href: '/requestsU',     tourId: 'tour-nav-requests'     },
+    { label: 'Notifications',href: '/notifications', tourId: 'tour-nav-notifications'},
   ];
 
   const userId = typeof window !== 'undefined'
@@ -254,7 +254,7 @@ export default function DashboardStudent() {
 
     return (
       <div className={`flex flex-col ${compact ? 'items-start p-3' : 'items-center py-8 px-6'} h-full`}>
-        <div className="w-full flex items-center justify-between mb-6">
+        <div className="w-full flex items-center justify-between mb-6" id="tour-profile">
           <div className="flex items-center gap-4">
             <div className="h-16 w-16 rounded-full overflow-hidden bg-white/10 flex items-center justify-center">
               {profilePic ? (
@@ -283,7 +283,7 @@ export default function DashboardStudent() {
           <ul className="space-y-2">
             {NAV_ITEMS.map((item) => (
               <li key={item.href}>
-                <Link href={item.href} className="block w-full text-left rounded-md px-4 py-3 text-sm font-medium text-white hover:bg-white/10">
+                <Link href={item.href} id={item.tourId} className="sidebar-nav-link">
                   <span className="flex items-center justify-between gap-2">
                     <span>{item.label}</span>
                     {item.href === '/notifications' && <SidebarNotificationBell />}
@@ -308,8 +308,8 @@ export default function DashboardStudent() {
 
   return (
     <main className="min-h-screen px-0 py-8">
-      {/* require authentication */}
       <AuthGuard />
+      <DashboardTour userId={userId} />
       <ConfirmModal
         open={showLogoutModal}
         title="Log out"
@@ -331,7 +331,7 @@ export default function DashboardStudent() {
 
           {/* Toggle between Available / Attended Events */}
           <div className="mt-4">
-            <div className="inline-flex rounded-xl bg-[var(--surface-soft)] p-1">
+            <div id="tour-view-toggle" className="inline-flex rounded-xl bg-[var(--surface-soft)] p-1">
               <button type="button" onClick={() => setViewMode('available')} className={`px-4 py-2 rounded-lg text-sm font-semibold ${viewMode === 'available' ? 'bg-white text-[var(--brand-strong)]' : 'text-slate-600'}`}>
                 Available Events
               </button>
@@ -345,7 +345,7 @@ export default function DashboardStudent() {
         <div className="mx-auto max-w-[2000px] lg:ml-80 px-4 mb-4">
           {/* Single filter box */}
           <div className="flex justify-center">
-            <div className="w-full max-w-[1300px] rounded-2xl bg-white p-4 shadow-sm">
+            <div id="tour-event-filters" className="w-full max-w-[1300px] rounded-2xl bg-white p-4 shadow-sm">
               <div className="flex flex-col gap-3">
                 <div className="flex justify-center">
                   <span className="text-sm font-semibold text-center">Filter events</span>
@@ -402,7 +402,7 @@ export default function DashboardStudent() {
         </div>
 
         <div className="hidden lg:block">
-          <aside className="fixed left-0 top-0 h-screen w-80 bg-[linear-gradient(180deg,#0f766e,#34d399)] border-r border-[var(--stroke)] z-10">
+          <aside id="tour-sidebar" className="fixed left-0 top-0 h-screen w-80 bg-[linear-gradient(180deg,#0f766e,#34d399)] border-r border-[var(--stroke)] z-10">
             <div className="sticky top-6 h-[calc(100vh-48px)] overflow-hidden">
               <SidePanelContent />
             </div>
@@ -434,7 +434,7 @@ export default function DashboardStudent() {
               </p>
             )}
 
-            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div id="tour-event-cards" className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
               {displayedEvents.map(ev => (
                 <article key={ev.EventID || ev.id || ev.eventId} className="surface-card reveal-up h-full overflow-hidden p-4 flex flex-col">
                   <div className="mb-3 flex items-start justify-between gap-2">
@@ -465,15 +465,15 @@ export default function DashboardStudent() {
                             type="button"
                             onClick={() => handleQuickRegister(ev.EventID || ev.id || ev.eventId)}
                             disabled={Boolean(registeringByEventId[Number(ev.EventID || ev.id || ev.eventId)])}
-                            className="cta px-3 py-2 text-sm font-semibold disabled:opacity-70"
+                            className="dashboard-button cta px-3 py-2 text-sm font-semibold disabled:opacity-70"
                           >
                             {Boolean(registeringByEventId[Number(ev.EventID || ev.id || ev.eventId)]) ? 'Registering...' : 'Register'}
                           </button>
                         )}
-                        <Link href={`/viewEvent?eventId=${ev.EventID || ev.id || ev.eventId}`} className="rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm font-semibold hover:bg-[var(--surface-soft)]">View Details</Link>
+                        <Link href={`/viewEvent?eventId=${ev.EventID || ev.id || ev.eventId}`} className="dashboard-button rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm font-semibold hover:bg-[var(--surface-soft)]">View Details</Link>
                       </>
                     ) : (
-                      <Link href={`/viewEvent?eventId=${ev.EventID || ev.id || ev.eventId}`} className="rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm font-semibold hover:bg-[var(--surface-soft)]">View Details</Link>
+                      <Link href={`/viewEvent?eventId=${ev.EventID || ev.id || ev.eventId}`} className="dashboard-button rounded-md border border-[var(--stroke)] bg-white px-3 py-2 text-sm font-semibold hover:bg-[var(--surface-soft)]">View Details</Link>
                     )}
                   </div>
                 </article>

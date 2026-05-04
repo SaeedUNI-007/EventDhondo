@@ -73,7 +73,7 @@ export default function AdminLayout({ children }) {
                       <li key={item.href}>
                         <Link
                           href={item.href}
-                          className={`flex items-center gap-3 rounded-md px-4 py-3 text-sm font-medium transition ${
+                          className={`dashboard-button flex items-center gap-3 rounded-md px-4 py-3 text-sm font-medium transition ${
                             active
                               ? "bg-white text-[var(--brand-strong)]"
                               : "text-white hover:bg-white/10"

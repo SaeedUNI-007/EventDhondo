@@ -14,7 +14,9 @@ const normalizeAllowedCity = (value) => {
 
 // Helper function to validate the university domain
 const isUniversityEmail = (email) => {
-    return email && email.toLowerCase().endsWith('@fast.edu.pk');
+    //return email && email.toLowerCase().endsWith('@fast.edu.pk');
+    return email && email.toLowerCase().endsWith('.edu.pk');
+
 };
 
 // 1. POST /api/auth/register
@@ -145,7 +147,7 @@ router.post('/register', async (req, res) => {
     if (!isUniversityEmail(normalizedEmail)) {
         return res.status(400).json({ 
             success: false, 
-            message: "Registration is only allowed for users with an @fast.edu.pk email." 
+            message: "Registration is only allowed for users with a valid university email (.edu.pk)." 
         });
     }
 
@@ -313,7 +315,7 @@ router.post('/login', async (req, res) => {
     if (!isUniversityEmail(normalizedEmail)) {
         return res.status(400).json({ 
             success: false, 
-            message: "Access is restricted to @fast.edu.pk email addresses." 
+            message: "Access is restricted to valid university email addresses (.edu.pk)." 
         });
     }
 

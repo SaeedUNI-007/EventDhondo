@@ -112,7 +112,7 @@ export default function Login() {
               <input
                 type="email"
                 className="w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2.5 outline-none transition focus:border-[var(--brand)] focus:ring-2 focus:ring-teal-200"
-                placeholder="you@fast.edu.pk"
+                placeholder="you@university.edu.pk"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required

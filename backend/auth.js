@@ -353,7 +353,12 @@ if (isPasswordValid) {
         { expiresIn: '1h' }
     );
     
-    // 3. Return the token to the frontend
+    // 3. Update LastLogin timestamp (triggers login notification)
+    await pool.request()
+        .input('UserID', sql.Int, user.UserID)
+        .query('UPDATE [Users] SET [LastLogin] = SYSDATETIMEOFFSET() WHERE [UserID] = @UserID');
+    
+    // 4. Return the token to the frontend
     res.status(200).json({ 
         success: true, 
         token, // <--- THE FRONTEND NEEDS THIS TO ACCESS ADMIN ROUTES

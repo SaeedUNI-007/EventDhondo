@@ -1,6 +1,5 @@
 "use client";
 import Link from 'next/link';
-import SidebarNotificationBell from '@/components/SidebarNotificationBell';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
@@ -229,7 +228,6 @@ export default function DashboardO() {
     { label: 'Attendance',   href: '/attendanceO',   tourId: 'tour-nav-attendance'  },
     { label: 'Remove Event', href: '/removeEventO',  tourId: 'tour-nav-removeevent' },
     { label: 'Requests',     href: '/requestsO',     tourId: 'tour-nav-requests'    },
-    { label: 'Notifications',href: '/notifications', tourId: 'tour-nav-notifications'},
   ];
 
   const SidePanelContent = ({ compact = false }) => {
@@ -272,10 +270,7 @@ export default function DashboardO() {
             {NAV_ITEMS.map((item) => (
               <li key={item.href}>
                 <Link href={item.href} id={item.tourId} className="sidebar-nav-link">
-                  <span className="flex items-center justify-between gap-2">
-                    <span>{item.label}</span>
-                    {item.href === '/notifications' && <SidebarNotificationBell />}
-                  </span>
+                  <span>{item.label}</span>
                 </Link>
               </li>
             ))}

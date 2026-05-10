@@ -107,7 +107,7 @@ BEGIN
     BEGIN TRANSACTION;
     BEGIN TRY
         DECLARE @EventStatus NVARCHAR(20);
-        DECLARE @MaxCap INT; -- <--- ADDED THIS MISSING LINE
+        DECLARE @MaxCap INT;
 
         -- Use UPDLOCK and HOLDLOCK to prevent race conditions for the last seat
         SELECT @MaxCap = e.Capacity,
@@ -344,10 +344,10 @@ BEGIN
         UPDATE [dbo].[Events]
         SET Status = 'Cancelled'
         WHERE EventID = @EventID
-          AND Status <> 'Cancelled';
+        AND Status <> 'Cancelled';
 
-                IF @@ROWCOUNT = 0
-                BEGIN
+        IF @@ROWCOUNT = 0
+        BEGIN
             ROLLBACK TRANSACTION;
             SELECT 'Error: Event is already cancelled.' AS Message;
             RETURN;
